@@ -65,7 +65,10 @@ fn untrusted_folder_never_runs() {
     write(
         col.path(),
         "a.sh",
-        &format!("touch {}\ncurl -sS http://127.0.0.1:9/\n", marker.display()),
+        &format!(
+            "touch '{}'\ncurl -sS http://127.0.0.1:9/\n",
+            marker.display().to_string().replace('\\', "/")
+        ),
     );
     sankh(cfg.path())
         .arg("run")
@@ -116,8 +119,15 @@ fn hostile_env_values_are_neither_broken_nor_injected() {
     let cfg = tempfile::tempdir().unwrap();
     let col = tempfile::tempdir().unwrap();
     let marker = col.path().join("pwned");
+    // Git for Windows' native curl decodes argv in the ANSI code page, so
+    // non-ASCII arguments cannot round-trip there.
+    let unicode = if cfg!(windows) {
+        ""
+    } else {
+        " ünïcødé 🐚"
+    };
     let hostile = format!(
-        "a\"b 'c' $HOME `touch {m}` $(touch {m}) \\ ; | & ünïcødé 🐚\nline2",
+        "a\"b 'c' $HOME `touch {m}` $(touch {m}) \\ ; | &{unicode}\nline2",
         m = marker.display()
     );
     write(
