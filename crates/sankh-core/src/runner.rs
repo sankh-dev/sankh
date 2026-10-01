@@ -349,11 +349,21 @@ fn spawn(
     let headers_path = tmp.path().join("headers");
     let meta_path = tmp.path().join("meta.json");
 
+    // Windows paths (`\\?\D:\...`) are mangled by a POSIX shell, so pass a
+    // `./`-relative, forward-slash path; the shell runs from the root.
+    let script = match file.strip_prefix(&collection.root) {
+        Ok(rel) => {
+            let parts: Vec<_> = rel.iter().map(|p| p.to_string_lossy()).collect();
+            format!("./{}", parts.join("/"))
+        }
+        Err(_) => file.to_string_lossy().into_owned(),
+    };
+
     let mut cmd = Command::new(&shell);
     cmd.arg("-c")
         .arg(WRAPPER)
         .arg("sankh")
-        .arg(file)
+        .arg(script)
         .current_dir(&collection.root)
         .env_clear()
         .envs(ctx.env.resolved())
