@@ -1,0 +1,4 @@
+/target
+.env.local
+sankh-report.*
+*.snap.new

@@ -1,0 +1,29 @@
+[package]
+name = "sankh"
+description = "Blow the conch. Run your APIs. A folder of curl files as an API collection."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "../../README.md"
+
+[[bin]]
+name = "sankh"
+path = "src/main.rs"
+
+[dependencies]
+sankh-core.workspace = true
+sankh-server.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+httpmock.workspace = true
+tempfile.workspace = true
+axum.workspace = true

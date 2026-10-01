@@ -1,0 +1,41 @@
+---
+source: crates/sankh-core/src/parser.rs
+expression: r
+---
+name: Create user
+description: ~
+tags:
+  - smoke
+  - users
+expects:
+  - type: status
+    patterns:
+      - kind: exact
+        code: 201
+  - type: json
+    expr: ".data.name"
+    op: eq
+    value: "\"test\""
+captures:
+  - var: USER_ID
+    source:
+      type: jq
+      expr: ".data.id"
+mode: form
+raw_reason: ~
+curl:
+  method: POST
+  url: $BASE_URL/users
+  headers:
+    - name: Authorization
+      value: Bearer $TOKEN
+    - name: Content-Type
+      value: application/json
+  body: "{\"name\":\"test\"}"
+  body_flag: ~
+  flags:
+    - "-sS"
+extra_header_lines: []
+shebang: "#!/usr/bin/env bash"
+body: "curl -sS -X POST \"$BASE_URL/users\" \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\":\"test\"}'\n"
+diagnostics: []

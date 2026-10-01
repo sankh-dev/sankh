@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = ["crates/sankh-core", "crates/sankh-server", "crates/sankh-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sankh-dev/sankh"
+homepage = "https://sankh.dev"
+rust-version = "1.85"
+
+[workspace.dependencies]
+sankh-core = { path = "crates/sankh-core", version = "0.1.0" }
+sankh-server = { path = "crates/sankh-server", version = "0.1.0" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+regex = "1"
+dotenvy = "0.15"
+shell-words = "1"
+dirs = "6"
+tempfile = "3"
+jaq-core = "3"
+jaq-std = "3"
+jaq-json = "2"
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+rust-embed = "8"
+mime_guess = "2"
+notify = "8"
+futures = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+insta = { version = "1", features = ["yaml"] }
+httpmock = "0.8"
+assert_cmd = "2"
+predicates = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

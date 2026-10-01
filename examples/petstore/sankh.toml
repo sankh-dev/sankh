@@ -1,0 +1,4 @@
+name = "petstore"
+format = 1
+default_env = "dev"
+timeout = 10

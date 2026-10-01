@@ -1,0 +1,131 @@
+export type TreeNode =
+	| { type: 'folder'; name: string; path: string; children: TreeNode[] }
+	| {
+			type: 'request';
+			name: string;
+			path: string;
+			tags: string[];
+			method: string | null;
+			raw: boolean;
+			errors: number;
+	  };
+
+export type TrustStatus =
+	| { state: 'trusted'; path: string }
+	| { state: 'untrusted' }
+	| { state: 'changed'; path: string; trusted_head: string; current_head: string };
+
+export interface Info {
+	name: string;
+	root: string;
+	version: string;
+	trust: TrustStatus;
+	default_env: string | null;
+}
+
+export interface Header {
+	name: string;
+	value: string;
+}
+
+export interface CurlCommand {
+	method: string;
+	url: string;
+	headers: Header[];
+	body: string | null;
+	body_flag: string | null;
+	flags: string[];
+}
+
+export interface Diagnostic {
+	line: number;
+	severity: 'warning' | 'error';
+	message: string;
+}
+
+export interface ParsedRequest {
+	name: string;
+	description: string | null;
+	tags: string[];
+	mode: 'form' | 'raw';
+	raw_reason: string | null;
+	curl: CurlCommand | null;
+	body: string;
+	diagnostics: Diagnostic[];
+}
+
+export interface RequestForm {
+	shebang: string | null;
+	name: string;
+	description: string | null;
+	tags: string[];
+	expects: string[];
+	captures: string[];
+	extra_header_lines: string[];
+	curl: CurlCommand;
+}
+
+export interface RequestDoc {
+	path: string;
+	content: string;
+	request: ParsedRequest;
+	form: RequestForm | null;
+}
+
+export interface AssertionResult {
+	label: string;
+	passed: boolean;
+	message: string | null;
+}
+
+export interface ResponseView {
+	status: number;
+	time_ms: number;
+	size: number;
+	url: string;
+	headers: [string, string][];
+	body: string;
+	body_truncated: boolean;
+	body_binary: boolean;
+}
+
+export interface RequestResult {
+	path: string;
+	name: string;
+	outcome: 'passed' | 'failed' | 'error';
+	response: ResponseView | null;
+	assertions: AssertionResult[];
+	captures: { name: string; value: string }[];
+	error: string | null;
+	warnings: string[];
+	stderr: string;
+	duration_ms: number;
+}
+
+export interface Summary {
+	total: number;
+	passed: number;
+	failed: number;
+	errors: number;
+	duration_ms: number;
+}
+
+export type RunEvent =
+	| { type: 'start'; total: number; paths: string[] }
+	| { type: 'running'; path: string }
+	| { type: 'result'; result: RequestResult }
+	| { type: 'done'; summary: Summary };
+
+export interface RunState {
+	target: string;
+	paths: string[];
+	results: Record<string, RequestResult>;
+	current: string | null;
+	summary: Summary | null;
+}
+
+export interface EnvVar {
+	name: string;
+	value: string;
+	source: 'file' | 'capture';
+}

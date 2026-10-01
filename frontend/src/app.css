@@ -1,0 +1,110 @@
+:root {
+	--bg: #0d1412;
+	--panel: #121c19;
+	--panel-2: #17241f;
+	--border: #233630;
+	--text: #dce9e4;
+	--muted: #84a097;
+	--accent: #1d9a78;
+	--accent-strong: #0f6e56;
+	--accent-soft: #e1f5ee;
+	--ok: #3ccf91;
+	--fail: #ff6b6b;
+	--warn: #f2c14e;
+	--mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font: 13px/1.45 var(--sans);
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+button {
+	background: var(--panel-2);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 4px 10px;
+	cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+button.primary {
+	background: var(--accent-strong);
+	border-color: var(--accent);
+	color: #fff;
+}
+
+input,
+select,
+textarea {
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 5px 8px;
+	min-width: 0;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+
+code,
+pre,
+.mono {
+	font-family: var(--mono);
+	font-size: 12px;
+}
+
+.method {
+	font: 600 10px/1 var(--mono);
+	letter-spacing: 0.02em;
+}
+.method-GET {
+	color: #5fd3a6;
+}
+.method-POST {
+	color: #f2c14e;
+}
+.method-PUT,
+.method-PATCH {
+	color: #6fb6ff;
+}
+.method-DELETE {
+	color: #ff8080;
+}
+.method-RAW {
+	color: var(--muted);
+}

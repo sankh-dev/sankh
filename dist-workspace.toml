@@ -1,0 +1,23 @@
+# cargo-dist release configuration. After installing cargo-dist, run
+# `dist generate` to (re)create .github/workflows/release.yml from this file.
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.30.0"
+ci = "github"
+installers = ["shell", "powershell", "homebrew"]
+tap = "sankh-dev/homebrew-tap"
+publish-jobs = ["homebrew"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+]
+checksum = "sha256"
+install-path = ["$SANKH_INSTALL_DIR", "~/.local/bin"]
+# Build the web UI before compiling so it is embedded in every binary.
+github-build-setup = "../build-setup.yml"

@@ -1,0 +1,6 @@
+- uses: actions/setup-node@v4
+  with:
+    node-version: 22
+- name: Build web UI
+  shell: bash
+  run: cd frontend && npm ci && npm run build
