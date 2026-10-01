@@ -4,7 +4,7 @@
 members = ["cargo:."]
 
 [dist]
-cargo-dist-version = "0.30.0"
+cargo-dist-version = "0.33.0"
 ci = "github"
 installers = ["shell", "powershell", "homebrew"]
 tap = "sankh-dev/homebrew-tap"
@@ -18,6 +18,6 @@ targets = [
     "x86_64-pc-windows-msvc",
 ]
 checksum = "sha256"
-install-path = ["$SANKH_INSTALL_DIR", "~/.local/bin"]
+install-path = ["$SANKH_INSTALL_DIR/", "~/.local/bin"]
 # Build the web UI before compiling so it is embedded in every binary.
 github-build-setup = "../build-setup.yml"
