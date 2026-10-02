@@ -213,4 +213,56 @@
 			display: none;
 		}
 	}
+
+	@media (max-width: 560px) {
+		.prose h1 {
+			margin-bottom: 18px;
+			font-size: 30px;
+		}
+
+		.prose :global(h2) {
+			margin-top: 36px;
+			font-size: 21px;
+		}
+
+		.prose :global(h3) {
+			font-size: 17px;
+		}
+
+		.prose :global(.anchor) {
+			display: none;
+		}
+
+		.prose :global(:is(ul, ol)) {
+			padding-left: 22px;
+		}
+
+		.prose :global(table) {
+			display: block;
+			overflow-x: auto;
+			font-size: 14px;
+		}
+
+		.prose :global(th),
+		.prose :global(td) {
+			min-width: 7em;
+		}
+
+		.prose :global(pre) {
+			margin-left: -18px;
+			margin-right: -18px;
+			border-left: 0;
+			border-right: 0;
+			border-radius: 0;
+		}
+
+		.pager {
+			flex-direction: column;
+			margin-top: 40px;
+		}
+
+		.next {
+			margin-left: 0;
+		}
+	}
 </style>

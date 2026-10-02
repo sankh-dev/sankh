@@ -443,11 +443,71 @@
 		.split,
 		.cards,
 		.install-list {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.hero-grid > * {
+			min-width: 0;
 		}
 
 		.hero {
 			padding-top: 48px;
+		}
+	}
+
+	@media (max-width: 560px) {
+		.hero {
+			padding: 32px 0 40px;
+		}
+
+		.hero-grid {
+			gap: 36px;
+		}
+
+		.hero-logo {
+			width: 56px;
+			height: 56px;
+			margin-bottom: 16px;
+		}
+
+		.lede {
+			font-size: 16px;
+		}
+
+		.cta .btn {
+			flex: 1 1 0;
+			justify-content: center;
+			padding: 12px 14px;
+			white-space: nowrap;
+		}
+
+		.section {
+			padding-top: 56px;
+		}
+
+		h2 {
+			font-size: 25px;
+		}
+
+		.section-lede {
+			margin-bottom: 20px;
+		}
+
+		.terminal {
+			font-size: 12.5px;
+		}
+
+		.card {
+			padding: 18px;
+		}
+
+		.exit {
+			width: 100%;
+		}
+
+		.exit th,
+		.exit td {
+			padding-right: 12px;
 		}
 	}
 </style>

@@ -72,22 +72,40 @@
 
 	@media (max-width: 860px) {
 		.docs {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 			gap: 24px;
+			padding-top: 24px;
 		}
 
 		.sidebar {
 			position: static;
+			padding-bottom: 16px;
+			border-bottom: 1px solid var(--border);
 		}
 
 		ul {
 			display: flex;
-			flex-wrap: wrap;
-			gap: 4px 12px;
+			gap: 6px;
+			margin: 0 -18px;
+			padding: 0 18px;
+			overflow-x: auto;
+			scrollbar-width: none;
+		}
+
+		li {
+			flex-shrink: 0;
 		}
 
 		li a {
 			margin-left: 0;
+			padding: 8px 14px;
+			border: 1px solid var(--border);
+			border-radius: 999px;
+			white-space: nowrap;
+		}
+
+		li a[aria-current='page'] {
+			border-color: var(--accent);
 		}
 	}
 </style>

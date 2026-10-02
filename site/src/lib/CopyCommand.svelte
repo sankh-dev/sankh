@@ -61,4 +61,20 @@
 	button:hover {
 		border-color: var(--accent);
 	}
+
+	@media (max-width: 560px) {
+		.cmd {
+			gap: 8px;
+			padding: 8px 8px 8px 12px;
+		}
+
+		code {
+			font-size: 13px;
+		}
+
+		button {
+			min-width: 64px;
+			padding: 8px 10px;
+		}
+	}
 </style>

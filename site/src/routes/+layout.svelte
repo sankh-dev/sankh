@@ -119,4 +119,24 @@
 	.foot p {
 		margin: 0;
 	}
+
+	@media (max-width: 560px) {
+		.bar {
+			height: 56px;
+		}
+
+		nav {
+			gap: 18px;
+		}
+
+		.site-footer {
+			margin-top: 56px;
+		}
+
+		.foot {
+			flex-direction: column;
+			padding-top: 22px;
+			padding-bottom: 22px;
+		}
+	}
 </style>
