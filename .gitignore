@@ -2,3 +2,6 @@
 .env.local
 sankh-report.*
 *.snap.new
+site/node_modules/
+site/build/
+site/.svelte-kit/
