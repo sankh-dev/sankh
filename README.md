@@ -52,6 +52,7 @@ sankh init my-api              # scaffold a collection
 sankh trust my-api             # request files are scripts: trust before running
 sankh run my-api --env dev     # run everything, exit non-zero on failure
 sankh serve my-api             # web UI on http://localhost:4747
+sankh workspace add my-api     # or keep it, so plain `sankh serve` opens it
 ```
 
 Try the bundled example against an in-memory mock:
@@ -96,8 +97,11 @@ sankh run [PATH] [--env NAME] [--folder F]... [--tag T]... [--all]
 ## `sankh serve`
 
 ```
-sankh serve [PATH] [--listen 127.0.0.1] [--port 4747] [--token T] [--allow-host H]...
+sankh serve [PATH]... [--listen 127.0.0.1] [--port 4747] [--token T] [--allow-host H]...
 ```
+
+Without a path, `sankh serve` opens your saved [workspace](#workspaces). With
+one or more paths, it opens just those folders for this session.
 
 The UI has a file tree, form and raw (CodeMirror) editors, an environment
 picker, live results for single requests and whole folders, and import from
@@ -114,6 +118,53 @@ Security:
 - Cross-origin API calls are rejected; paths cannot leave the collection root.
 - Prefer an SSH tunnel (`ssh -L 4747:localhost:4747 host`) or a TLS reverse
   proxy (`--allow-host api-tools.example.com`) for remote use.
+
+## Workspaces
+
+A workspace is the set of collections the UI shows side by side, so you can
+work on a users API and a payments API at the same time without switching.
+Collections stay independent: each has its own environment picker, captured
+values, trust and runs.
+
+```
+sankh workspace add PATH...          # keep folders in the workspace
+sankh workspace list [--json]        # show them, with trust status
+sankh workspace remove ID|PATH       # unlink (alias: unlink); files stay on disk
+```
+
+- The saved workspace lives in `~/.config/sankh/workspace.toml` (or
+  `$SANKH_CONFIG_DIR`). `sankh serve` with no path opens it; folders added or
+  unlinked in the UI are saved there too.
+- `sankh serve A B` opens a session-only workspace with A and B. Changes made
+  in the UI are not saved.
+- **Scratch** is a built-in collection that is always listed first, for
+  trying requests without an existing folder. It lives in
+  `~/.local/share/sankh/scratch` (or `$SANKH_DATA_DIR/scratch`), is trusted
+  automatically and cannot be unlinked. Use **Copy to…** in the editor to move
+  a request from Scratch into a real collection; existing files are never
+  overwritten.
+- A missing folder stays in the list, marked missing, until you unlink it.
+  Collections cannot be nested inside each other.
+
+## `sankh import`
+
+```
+sankh import postman COLLECTION.json [--env ENV.json]... [-o DIR] [--force] [--json]
+```
+
+Converts a Postman Collection v2.0/v2.1 export into a Sankh folder: folders
+become directories, requests become numbered `.sh` files, and collection and
+environment variables become `environments/*.env` (`{{baseUrl}}` becomes
+`${BASE_URL}`). Auth becomes explicit headers or `-u`. Secret values and
+literal credentials are never written to disk; they are listed in
+`.env.example` for you to set in `.env.local`.
+
+Common test-script statements (`pm.response.to.have.status(201)`,
+`pm.environment.set("token", pm.response.json().token)`, simple
+`pm.expect(...).to.eql(...)`) become `@expect` and `@capture`. Anything else
+is kept as comments in the file and listed in the import report, because
+Sankh does not run JavaScript. Import never writes into a non-empty folder
+without `--force`.
 
 ## Collections
 

@@ -1,5 +1,7 @@
+mod import;
 mod init;
 mod output;
+mod workspace;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -54,8 +56,14 @@ enum Command {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
-    /// Start the web UI server for a collection
+    /// Start the web UI for the saved workspace, or for the given folders
     Serve(ServeArgs),
+    /// Manage the saved workspace that `sankh serve` opens
+    #[command(subcommand)]
+    Workspace(workspace::Action),
+    /// Convert a collection from another API client into a Sankh folder
+    #[command(subcommand)]
+    Import(import::Source),
 }
 
 #[derive(clap::Args)]
@@ -100,8 +108,9 @@ enum ReportFormat {
 
 #[derive(clap::Args)]
 struct ServeArgs {
-    #[arg(default_value = ".")]
-    path: PathBuf,
+    /// Collection folders for this session only; without any, the saved
+    /// workspace is opened
+    paths: Vec<PathBuf>,
     /// Address to bind; anything other than loopback requires --token
     #[arg(long, default_value = "127.0.0.1")]
     listen: String,
@@ -123,6 +132,8 @@ fn main() -> ExitCode {
         Command::Trust { path, revoke, list } => cmd_trust(path, revoke, list),
         Command::Init { path } => init::run(&path).map(|_| ExitCode::SUCCESS),
         Command::Serve(args) => cmd_serve(args),
+        Command::Import(source) => import::run(source).map(|_| ExitCode::SUCCESS),
+        Command::Workspace(action) => workspace::run(action).map(|_| ExitCode::SUCCESS),
     };
     match result {
         Ok(code) => code,
@@ -286,9 +297,26 @@ fn cmd_trust(path: PathBuf, revoke: bool, list: bool) -> Result<ExitCode> {
 }
 
 fn cmd_serve(args: ServeArgs) -> Result<ExitCode> {
-    let collection = Collection::discover(&args.path)?.0;
+    let workspace = if args.paths.is_empty() {
+        let saved = sankh_core::workspace::Workspace::load()?;
+        let cwd = std::path::Path::new(".");
+        if saved.collections.is_empty()
+            && (cwd.join(sankh_core::collection::CONFIG_FILE).is_file()
+                || cwd.join(sankh_core::collection::ENV_DIR).is_dir())
+        {
+            println!(
+                "{}",
+                output::dim(
+                    "this folder looks like a collection: `sankh workspace add .` keeps it in the workspace, or `sankh serve .` opens it for this session"
+                )
+            );
+        }
+        sankh_server::WorkspaceSource::Saved
+    } else {
+        sankh_server::WorkspaceSource::Session(args.paths)
+    };
     let config = sankh_server::ServeConfig {
-        collection,
+        workspace,
         listen: args.listen,
         port: args.port,
         token: args.token.filter(|t| !t.is_empty()),

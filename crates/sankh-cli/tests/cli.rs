@@ -13,6 +13,7 @@ fn example() -> PathBuf {
 fn sankh(config_dir: &Path) -> Command {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("sankh");
     cmd.env("SANKH_CONFIG_DIR", config_dir)
+        .env("SANKH_DATA_DIR", config_dir.join("data"))
         .env_remove("SANKH_TRUST")
         .env_remove("TOKEN")
         .env("NO_COLOR", "1");
@@ -220,6 +221,103 @@ fn parse_errors_are_reported_with_line_numbers() {
         ));
 }
 
+fn postman_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../sankh-core/tests/fixtures/postman")
+        .join(name)
+}
+
+#[test]
+fn imported_postman_petstore_runs() {
+    let base = petstore::spawn();
+    let cfg = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let col = dir.path().join("petstore");
+    sankh(cfg.path())
+        .args(["import", "postman"])
+        .arg(postman_fixture("petstore.postman_collection.json"))
+        .arg("--env")
+        .arg(postman_fixture("petstore.postman_environment.json"))
+        .arg("-o")
+        .arg(&col)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("6 request(s) in 2 folder(s)"))
+        .stdout(predicate::str::contains("PET_PASSWORD"));
+
+    sankh(cfg.path())
+        .args(["run", "--trust"])
+        .arg(&col)
+        .env("BASE_URL", &base)
+        .env("PET_PASSWORD", petstore::PASSWORD)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("6 passed"));
+
+    sankh(cfg.path())
+        .args(["import", "postman"])
+        .arg(postman_fixture("petstore.postman_collection.json"))
+        .arg("-o")
+        .arg(&col)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--force"));
+}
+
+#[test]
+fn imported_postman_requests_send_the_same_bytes() {
+    let server = httpmock::MockServer::start();
+    let token = server.mock(|when, then| {
+        when.method("POST")
+            .path("/oauth/token")
+            .header("authorization", "Basic YWRtaW46aHVudGVyMg==")
+            .body_matches(r"^grant_type=password&scope=read(\+|%20)write$");
+        then.status(200).body("{}");
+    });
+    let echo = server.mock(|when, then| {
+        when.method("POST")
+            .path("/echo")
+            .query_param("debug", "1")
+            .header("x-price", "$5 and EUR")
+            .body(
+                "{\n  \"text\": \"it's $HOME `whoami` \\\\ ünïcødé 🐚\",\n  \"user\": \"u-1\"\n}",
+            );
+        then.status(200).body("{}");
+    });
+    let cfg = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let col = dir.path().join("messy");
+    sankh(cfg.path())
+        .args(["import", "postman", "--json"])
+        .arg(postman_fixture("messy.postman_collection.json"))
+        .arg("-o")
+        .arg(&col)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"requests\": 9"));
+
+    sankh(cfg.path())
+        .args(["run", "--trust"])
+        .arg(col.join("01-forms-files/02-login-form.sh"))
+        .env("BASE_URL", server.base_url())
+        .env("BASIC_USER", "admin")
+        .env("BASIC_PASSWORD", "hunter2")
+        .assert()
+        .success();
+    token.assert();
+
+    if cfg!(not(windows)) {
+        sankh(cfg.path())
+            .args(["run", "--trust"])
+            .arg(col.join("02-quoting-it-s-5-quoted/01-echo-tricky-body.sh"))
+            .env("BASE_URL", server.base_url())
+            .env("USER_ID", "u-1")
+            .assert()
+            .success();
+        echo.assert();
+    }
+}
+
 #[test]
 fn init_creates_a_runnable_collection() {
     let cfg = tempfile::tempdir().unwrap();
@@ -234,4 +332,69 @@ fn init_creates_a_runnable_collection() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Ping"));
+}
+
+#[test]
+fn workspace_add_list_and_unlink() {
+    let cfg = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let users = dir.path().join("users");
+    let payments = dir.path().join("payments");
+    write(&users, "sankh.toml", "name = \"Users API\"\n");
+    write(&payments, "environments/dev.env", "BASE_URL=x\n");
+
+    sankh(cfg.path())
+        .args(["workspace", "add"])
+        .arg(&users)
+        .arg(&payments)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added users-api"))
+        .stdout(predicate::str::contains("added payments"));
+    sankh(cfg.path())
+        .args(["workspace", "add"])
+        .arg(&users)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("already in the workspace"));
+    assert!(cfg.path().join("workspace.toml").is_file());
+
+    let out = sankh(cfg.path())
+        .args(["workspace", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let rows: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let ids: Vec<&str> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["scratch", "users-api", "payments"]);
+    assert_eq!(rows[1]["trust"], "untrusted");
+
+    sankh(cfg.path())
+        .args(["workspace", "remove", "scratch"])
+        .assert()
+        .code(2);
+    sankh(cfg.path())
+        .args(["workspace", "remove", "users-api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("unlinked users-api"));
+    assert!(users.join("sankh.toml").is_file());
+    sankh(cfg.path())
+        .args(["workspace", "unlink"])
+        .arg(&payments)
+        .assert()
+        .success();
+    sankh(cfg.path())
+        .args(["workspace", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scratch"))
+        .stdout(predicate::str::contains("users-api").not());
 }
