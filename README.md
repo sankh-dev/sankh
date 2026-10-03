@@ -33,7 +33,7 @@ sh pets/02-create.sh
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.1.0 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.0 sh
 ```
 
 Or build from source (needs Rust and Node 22):
@@ -44,6 +44,19 @@ cargo install --path crates/sankh-cli
 ```
 
 Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL.
+
+### Desktop app
+
+The same UI in a native window: download the `.dmg` (macOS), `-setup.exe` or
+`.msi` (Windows), or `.AppImage` or `.deb` (Linux) from the
+[latest release](https://github.com/sankh-dev/sankh/releases/latest). It runs
+the server in-process on a random loopback port behind a per-launch token and
+opens your saved workspace, like `sankh serve`.
+
+The installers are not code signed yet. On macOS right-click the app and
+choose Open the first time (or `xattr -dr com.apple.quarantine
+/Applications/Sankh.app`); on Windows choose More info, then Run anyway. It
+still needs `curl` and a POSIX shell (Git Bash on Windows).
 
 ## Quick start
 
@@ -213,10 +226,16 @@ raw-mode file calls curl several times, the last response is checked.
 ## Development
 
 ```bash
-cargo test --workspace                  # unit, snapshot, CLI and server tests
+cargo test                              # unit, snapshot, CLI and server tests
 (cd frontend && npm run dev)            # UI dev server, proxies /api to :4747
 cargo run -- serve examples/petstore    # API for the dev server
+cargo run -p sankh-desktop              # desktop app (needs frontend/dist built)
 ```
+
+The desktop app (`crates/sankh-desktop`, Tauri 2) is left out of plain
+`cargo build`/`cargo test` because on Linux it needs `webkit2gtk-4.1` and
+`libsoup-3.0` development packages. Build installers with
+`cd crates/sankh-desktop && cargo tauri build`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -4,7 +4,7 @@
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.1.1 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.0 sh
 ```
 
 The installer downloads the release archive for your platform from GitHub,
@@ -29,6 +29,31 @@ cargo install --path crates/sankh-cli
 ```
 
 Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL.
+
+## Desktop app
+
+The desktop app is the same web UI in a native window, with a native folder
+picker. It runs the server in-process on a random loopback port behind a
+per-launch token, and uses the same saved workspace as `sankh serve`. Download
+it from the [latest release](https://github.com/sankh-dev/sankh/releases/latest):
+
+| Platform | File |
+| --- | --- |
+| macOS (Apple silicon) | `Sankh_<version>_aarch64.dmg` |
+| macOS (Intel) | `Sankh_<version>_x64.dmg` |
+| Windows | `Sankh_<version>_x64-setup.exe` or `.msi` |
+| Linux | `Sankh_<version>_amd64.AppImage` or `.deb` |
+
+The installers are not code signed yet:
+
+- **macOS:** right-click the app and choose Open the first time, or run
+  `xattr -dr com.apple.quarantine /Applications/Sankh.app`.
+- **Windows:** in the SmartScreen prompt choose More info, then Run anyway.
+- **Linux:** the AppImage needs `chmod +x`; the app uses the system
+  WebKitGTK (`libwebkit2gtk-4.1`).
+
+The desktop app still needs `curl` and a POSIX shell (Git Bash on Windows; it
+finds a standard Git for Windows install even when it is not on `PATH`).
 
 ## Your first collection
 

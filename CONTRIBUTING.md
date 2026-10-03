@@ -15,9 +15,10 @@
 
 ```bash
 cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --exclude sankh-desktop --all-targets -- -D warnings
+cargo test
 (cd frontend && npm run check && npm run build)
+cargo clippy -p sankh-desktop -- -D warnings   # needs webkit2gtk-4.1 on Linux
 ```
 
 Snapshot tests use `insta`; review changes with `cargo insta review`.
