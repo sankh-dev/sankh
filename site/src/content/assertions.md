@@ -70,6 +70,23 @@ Given this response:
 # @expect json all(.data[]; .id | startswith("u_")) == true
 ```
 
+When the response body is itself an array, start with `.[0]` or `.[]`
+instead of a field name:
+
+```json
+[{"id": "PROD001", "price": 79.99, "specifications": {"color": "Black"}}]
+```
+
+```bash
+# @expect json .[0].id == "PROD001"
+# @expect json . | length > 0
+# @expect json map(.id) contains "PROD001"
+# @expect json all(.[]; .id | startswith("PROD")) == true
+# @expect json .[0].specifications.color == "Black"
+# @expect json .[0].price > 0
+# @capture PRODUCT_ID=.[0].id
+```
+
 An expression must produce exactly one value, so `.data[].id == "u_1"` fails
 with `` `.data[].id` produced 2 values; expected one ``. Wrap the iteration in
 `map`, `any`, `all` or `[...]` to turn it into a single value.

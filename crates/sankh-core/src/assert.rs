@@ -221,6 +221,22 @@ mod tests {
             r.message.as_deref(),
             Some("`.data[].id` produced 2 values; expected one")
         );
+
+        let body = br#"[{"id":"PROD001","price":79.99,"specifications":{"color":"Black"}}]"#;
+        for line in [
+            r#"json .[0].id == "PROD001""#,
+            "json . | length > 0",
+            r#"json map(.id) contains "PROD001""#,
+            r#"json all(.[]; .id | startswith("PROD")) == true"#,
+            r#"json .[0].specifications.color == "Black""#,
+            "json .[0].price > 0",
+        ] {
+            let Ok(Some(Expect::Json { expr, op, value })) = parse_expect(line) else {
+                panic!("`{line}` did not parse as a json expectation");
+            };
+            let r = check_json(&expr, op, value.as_deref(), body, &lookup);
+            assert!(r.passed, "`{line}` failed: {:?}", r.message);
+        }
     }
 
     #[test]

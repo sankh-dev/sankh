@@ -70,6 +70,11 @@ mod tests {
         };
         let jq = |e: &str| CaptureSource::Jq { expr: e.into() };
         assert_eq!(extract(&jq(".data[0].id"), &r).unwrap(), "u_1");
+        let top = Response {
+            body: br#"[{"id":"PROD001"}]"#.to_vec(),
+            ..Default::default()
+        };
+        assert_eq!(extract(&jq(".[0].id"), &top).unwrap(), "PROD001");
         assert_eq!(
             extract(&jq(".data"), &r).unwrap(),
             r#"[{"id":"u_1"},{"id":"u_2"}]"#
