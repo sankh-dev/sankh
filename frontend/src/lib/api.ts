@@ -1,6 +1,26 @@
-import type { EnvVar, Info, RequestDoc, RequestForm, RunEvent, TreeNode, TrustStatus } from './types';
+import type {
+	CollectionInfo,
+	DirListing,
+	EnvVar,
+	Info,
+	RequestDoc,
+	RequestForm,
+	RunEvent,
+	TreeNode,
+	TrustStatus
+} from './types';
 
 const TOKEN_KEY = 'sankh-token';
+
+/**
+ * Where the API lives. The web UI is served by the API itself, so `/api`;
+ * an embedding desktop app can set `window.__SANKH_API_BASE__` before load.
+ */
+let apiBase = (globalThis as { __SANKH_API_BASE__?: string }).__SANKH_API_BASE__ ?? '/api';
+
+export function setApiBase(base: string) {
+	apiBase = base.replace(/\/$/, '');
+}
 
 /** Picks up `#token=...` from the URL once, then keeps it for the tab session. */
 function initToken(): string | null {
@@ -37,7 +57,7 @@ function headers(json: boolean): HeadersInit {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-	const res = await fetch(`/api${path}`, {
+	const res = await fetch(`${apiBase}${path}`, {
 		method,
 		headers: headers(body !== undefined),
 		body: body === undefined ? undefined : JSON.stringify(body)
@@ -48,24 +68,35 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 const enc = (path: string) => path.split('/').map(encodeURIComponent).join('/');
+const c = (cid: string) => `/c/${encodeURIComponent(cid)}`;
 
 export const api = {
 	info: () => call<Info>('GET', '/info'),
-	tree: () => call<TreeNode>('GET', '/tree'),
-	getRequest: (path: string) => call<RequestDoc>('GET', `/request/${enc(path)}`),
-	saveRequest: (path: string, content: string) =>
-		call<RequestDoc>('PUT', `/request/${enc(path)}`, { content }),
-	deleteRequest: (path: string) => call<unknown>('DELETE', `/request/${enc(path)}`),
-	parse: (content: string, path: string) => call<RequestDoc>('POST', '/parse', { content, path }),
+	addCollection: (path: string) => call<CollectionInfo>('POST', '/collections', { path }),
+	removeCollection: (cid: string) => call<unknown>('DELETE', `/collections/${encodeURIComponent(cid)}`),
+	listDirs: (path?: string) =>
+		call<DirListing>('GET', `/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`),
 	render: (form: RequestForm) => call<{ content: string }>('POST', '/render', { form }),
 	importCurl: (curl: string, name: string) =>
 		call<{ content: string }>('POST', '/import', { curl, name }),
-	envs: () => call<{ envs: string[]; default: string | null }>('GET', '/envs'),
-	envVars: (name: string) => call<{ vars: EnvVar[] }>('GET', `/envs/${encodeURIComponent(name || '_')}`),
-	clearCaptures: (env: string) =>
-		call<unknown>('DELETE', `/captures?env=${encodeURIComponent(env || '_')}`),
-	trust: () => call<TrustStatus>('POST', '/trust'),
-	startRun: (path: string, env: string) => call<{ id: string }>('POST', '/run', { path, env })
+
+	tree: (cid: string) => call<TreeNode>('GET', `${c(cid)}/tree`),
+	getRequest: (cid: string, path: string) => call<RequestDoc>('GET', `${c(cid)}/request/${enc(path)}`),
+	saveRequest: (cid: string, path: string, content: string) =>
+		call<RequestDoc>('PUT', `${c(cid)}/request/${enc(path)}`, { content }),
+	deleteRequest: (cid: string, path: string) => call<unknown>('DELETE', `${c(cid)}/request/${enc(path)}`),
+	copyRequest: (cid: string, path: string, to: string, toPath: string) =>
+		call<{ collection: string; path: string }>('POST', `${c(cid)}/copy`, { path, to, to_path: toPath }),
+	parse: (cid: string, content: string, path: string) =>
+		call<RequestDoc>('POST', `${c(cid)}/parse`, { content, path }),
+	envs: (cid: string) => call<{ envs: string[]; default: string | null }>('GET', `${c(cid)}/envs`),
+	envVars: (cid: string, name: string) =>
+		call<{ vars: EnvVar[] }>('GET', `${c(cid)}/envs/${encodeURIComponent(name || '_')}`),
+	clearCaptures: (cid: string, env: string) =>
+		call<unknown>('DELETE', `${c(cid)}/captures?env=${encodeURIComponent(env || '_')}`),
+	trust: (cid: string) => call<TrustStatus>('POST', `${c(cid)}/trust`),
+	startRun: (cid: string, path: string, env: string) =>
+		call<{ id: string }>('POST', `${c(cid)}/run`, { path, env })
 };
 
 /**
@@ -73,7 +104,7 @@ export const api = {
  * Authorization header). Resolves when the stream ends.
  */
 export async function streamEvents<T>(path: string, onEvent: (e: T) => void, signal?: AbortSignal) {
-	const res = await fetch(`/api${path}`, { headers: headers(false), signal });
+	const res = await fetch(`${apiBase}${path}`, { headers: headers(false), signal });
 	if (!res.ok || !res.body) throw new ApiError(res.status, res.statusText);
 	const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = '';
@@ -101,7 +132,7 @@ export async function streamEvents<T>(path: string, onEvent: (e: T) => void, sig
 	}
 }
 
-export async function run(path: string, env: string, onEvent: (e: RunEvent) => void) {
-	const { id } = await api.startRun(path, env);
+export async function run(cid: string, path: string, env: string, onEvent: (e: RunEvent) => void) {
+	const { id } = await api.startRun(cid, path, env);
 	await streamEvents<RunEvent>(`/runs/${id}/events`, onEvent);
 }

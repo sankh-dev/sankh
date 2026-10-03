@@ -6,6 +6,8 @@
 	import type { Diagnostic, RequestDoc, RequestForm } from './types';
 
 	interface Props {
+		cid: string;
+		collection: string;
 		doc: RequestDoc;
 		vars: string[];
 		canRun: boolean;
@@ -13,9 +15,11 @@
 		onsave: (content: string) => Promise<RequestDoc>;
 		onrun: () => void;
 		ondelete: () => void;
+		/** Absent when there is no other collection to copy to. */
+		oncopy?: () => void;
 	}
 
-	let { doc, vars, canRun, running, onsave, onrun, ondelete }: Props = $props();
+	let { cid, collection, doc, vars, canRun, running, onsave, onrun, ondelete, oncopy }: Props = $props();
 
 	// The parent remounts this component (via {#key}) when another file opens,
 	// so initial values are taken once from the prop.
@@ -46,7 +50,7 @@
 
 	async function toForm() {
 		if (mode === 'form') return;
-		const parsed = await api.parse(content, doc.path);
+		const parsed = await api.parse(cid, content, doc.path);
 		diagnostics = parsed.request.diagnostics;
 		rawReason = parsed.request.raw_reason;
 		if (parsed.form) {
@@ -97,9 +101,14 @@
 				Raw
 			</button>
 		</div>
-		<span class="path mono" title={doc.path}>{doc.path}{dirty ? ' •' : ''}</span>
+		<span class="path mono" title="{collection}: {doc.path}">
+			<span class="col">{collection}</span> / {doc.path}{dirty ? ' •' : ''}
+		</span>
 		<span class="spacer"></span>
 		<button onclick={copyCurl} title="Copy the curl command">{copied ? 'Copied' : 'Copy curl'}</button>
+		{#if oncopy}
+			<button onclick={oncopy} title="Copy this request file into another collection">Copy to…</button>
+		{/if}
 		<button onclick={ondelete} title="Delete file">Delete</button>
 		<button onclick={save} disabled={saving || !dirty} title="Save (Ctrl+S)">Save</button>
 		<button class="primary" onclick={saveAndRun} disabled={!canRun || running} title="Run (Ctrl+Enter)">
@@ -145,6 +154,10 @@
 		border-bottom: 1px solid var(--border);
 		background: var(--panel);
 	}
+	.toolbar button {
+		flex: none;
+		white-space: nowrap;
+	}
 	.tabs {
 		display: flex;
 	}
@@ -167,6 +180,9 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.path .col {
+		color: var(--text);
 	}
 	.spacer {
 		flex: 1;

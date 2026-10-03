@@ -3,17 +3,19 @@
 
 	interface Props {
 		run: RunState;
+		/** Collection name. */
+		name: string;
 		selected: string | null;
 		onpick: (path: string) => void;
 	}
 
-	let { run, selected, onpick }: Props = $props();
+	let { run, name, selected, onpick }: Props = $props();
 	let done = $derived(Object.keys(run.results).length);
 </script>
 
 <div class="panel">
 	<div class="head">
-		<strong>Run {run.target || 'collection'}</strong>
+		<strong>Run {name}{run.target ? ` / ${run.target}` : ''}</strong>
 		{#if run.summary}
 			<span class="ok">{run.summary.passed} passed</span>
 			{#if run.summary.failed}<span class="bad">{run.summary.failed} failed</span>{/if}

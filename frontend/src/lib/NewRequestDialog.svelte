@@ -2,12 +2,13 @@
 	import { api } from './api';
 
 	interface Props {
+		collection: string;
 		folder: string;
 		oncreate: (path: string, content: string) => Promise<void>;
 		onclose: () => void;
 	}
 
-	let { folder, oncreate, onclose }: Props = $props();
+	let { collection, folder, oncreate, onclose }: Props = $props();
 
 	let name = $state('New request');
 	let fileName = $state('');
@@ -46,7 +47,7 @@
 
 <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
 	<form class="dialog" onsubmit={submit} aria-label="New request">
-		<h3>New request in <code>{folder || '/'}</code></h3>
+		<h3>New request in {collection} <code>/{folder}</code></h3>
 		<label>Name <input bind:value={name} /></label>
 		<label>File name <input class="mono" bind:value={fileName} placeholder="{suggested}.sh" /></label>
 		<label>

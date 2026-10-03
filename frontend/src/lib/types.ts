@@ -15,12 +15,31 @@ export type TrustStatus =
 	| { state: 'untrusted' }
 	| { state: 'changed'; path: string; trusted_head: string; current_head: string };
 
-export interface Info {
+export interface CollectionInfo {
+	id: string;
 	name: string;
 	root: string;
-	version: string;
-	trust: TrustStatus;
+	/** The built-in Scratch collection, which cannot be unlinked. */
+	scratch: boolean;
+	/** The folder is gone or cannot be opened; `error` says why. */
+	missing: boolean;
+	error: string | null;
+	trust: TrustStatus | null;
 	default_env: string | null;
+}
+
+export interface Info {
+	version: string;
+	/** False for `sankh serve A B`: workspace changes last for the session only. */
+	saved: boolean;
+	collections: CollectionInfo[];
+}
+
+export interface DirListing {
+	path: string;
+	parent: string | null;
+	collection: boolean;
+	dirs: { name: string; path: string; collection: boolean }[];
 }
 
 export interface Header {
@@ -111,12 +130,13 @@ export interface Summary {
 }
 
 export type RunEvent =
-	| { type: 'start'; total: number; paths: string[] }
+	| { type: 'start'; collection: string; total: number; paths: string[] }
 	| { type: 'running'; path: string }
 	| { type: 'result'; result: RequestResult }
 	| { type: 'done'; summary: Summary };
 
 export interface RunState {
+	collection: string;
 	target: string;
 	paths: string[];
 	results: Record<string, RequestResult>;
