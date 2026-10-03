@@ -11,6 +11,13 @@
 
 	let { saved, onadd, onclose }: Props = $props();
 
+	interface NativeDialog {
+		open(options: { directory: boolean; title?: string; defaultPath?: string }): Promise<string | string[] | null>;
+	}
+
+	/** The desktop app's native folder picker; absent in a browser. */
+	const nativeDialog = (globalThis as { __TAURI__?: { dialog?: NativeDialog } }).__TAURI__?.dialog;
+
 	let path = $state('');
 	let listing = $state.raw<DirListing | null>(null);
 	let error = $state<string | null>(null);
@@ -26,17 +33,38 @@
 		}
 	}
 
-	async function submit(event: SubmitEvent) {
-		event.preventDefault();
-		if (!path.trim()) return;
+	async function add(folder: string) {
 		error = null;
 		busy = true;
 		try {
-			await onadd(path.trim());
+			await onadd(folder);
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
 			busy = false;
+		}
+	}
+
+	async function submit(event: SubmitEvent) {
+		event.preventDefault();
+		if (path.trim()) await add(path.trim());
+	}
+
+	async function choose() {
+		if (!nativeDialog) return;
+		error = null;
+		try {
+			const picked = await nativeDialog.open({
+				directory: true,
+				title: 'Choose a collection folder',
+				defaultPath: path.trim() || undefined
+			});
+			if (typeof picked === 'string') {
+				path = picked;
+				await add(picked);
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
 		}
 	}
 
@@ -57,6 +85,9 @@
 		<div class="row">
 			<input class="mono" bind:value={path} placeholder="/path/to/collection" aria-label="Folder path" />
 			<button type="button" onclick={() => browse(path)}>Go</button>
+			{#if nativeDialog}
+				<button type="button" onclick={choose} disabled={busy}>Choose...</button>
+			{/if}
 		</div>
 		{#if listing}
 			<ul class="dirs">
@@ -65,7 +96,7 @@
 				{/if}
 				{#each listing.dirs as d (d.path)}
 					<li>
-						<button type="button" onclick={() => browse(d.path)} ondblclick={() => onadd(d.path)}>
+						<button type="button" onclick={() => browse(d.path)} ondblclick={() => add(d.path)}>
 							<span>{d.name}/</span>
 							{#if d.collection}<span class="tag">collection</span>{/if}
 						</button>

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The UI is served by the in-process server on a random loopback port; it may only open the native folder picker.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*"]
+  },
+  "permissions": ["dialog:allow-open"]
+}

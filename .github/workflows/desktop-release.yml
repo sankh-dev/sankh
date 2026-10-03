@@ -1,0 +1,94 @@
+# Builds the desktop app installers and attaches them to the GitHub Release
+# that cargo-dist (release.yml) created for the same tag. Running after that
+# workflow, rather than on the tag push, means the release already exists.
+#
+# The installers are not code signed or notarized yet.
+
+name: Desktop release
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach installers to (e.g. v0.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+
+jobs:
+  build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build web UI
+        run: cd frontend && npm ci && npm run build
+      - name: Install webview libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build installers
+        working-directory: crates/sankh-desktop
+        run: npx --yes @tauri-apps/cli@^2 build --target ${{ matrix.target }}
+      - name: Collect installers
+        run: |
+          bundle="target/${{ matrix.target }}/release/bundle"
+          mkdir -p out
+          shopt -s nullglob
+          for f in "$bundle"/dmg/*.dmg "$bundle"/msi/*.msi "$bundle"/nsis/*.exe \
+                   "$bundle"/deb/*.deb "$bundle"/appimage/*.AppImage; do
+            cp "$f" out/
+          done
+          cd out
+          for f in *; do
+            if command -v sha256sum >/dev/null; then
+              sha256sum "$f" > "$f.sha256"
+            else
+              shasum -a 256 "$f" > "$f.sha256"
+            fi
+          done
+          ls -l
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" out/* --clobber

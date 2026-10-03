@@ -1,0 +1,29 @@
+[package]
+name = "sankh-desktop"
+description = "Desktop app for Sankh: the web UI in a native window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+publish = false
+
+[package.metadata.dist]
+dist = false
+
+[[bin]]
+name = "sankh-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+sankh-server.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"

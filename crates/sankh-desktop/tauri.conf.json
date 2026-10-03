@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sankh",
+  "mainBinaryName": "sankh-desktop",
+  "identifier": "dev.sankh.app",
+  "build": {
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "msi", "nsis", "app", "dmg"],
+    "category": "DeveloperTool",
+    "shortDescription": "Run your APIs: a lightweight request manager",
+    "longDescription": "Sankh is a very lightweight request manager. A collection is a plain folder of .sh files, each holding one curl command.",
+    "copyright": "MIT OR Apache-2.0",
+    "homepage": "https://sankh.dev",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["curl"]
+      }
+    }
+  }
+}
