@@ -18,6 +18,9 @@ targets = [
     "x86_64-pc-windows-msvc",
 ]
 checksum = "sha256"
+# Build only the shipped package; `--workspace` would also compile
+# sankh-desktop, which needs webkit2gtk on Linux.
+precise-builds = true
 install-path = ["$SANKH_INSTALL_DIR/", "~/.local/bin"]
 # Build the web UI before compiling so it is embedded in every binary.
 github-build-setup = "../build-setup.yml"
