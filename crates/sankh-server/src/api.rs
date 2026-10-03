@@ -1,19 +1,22 @@
 //! JSON API handlers.
 
 use crate::AppState;
+use crate::registry::Slot;
 use crate::runs::RunHandle;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use sankh_core::collection::CollectionError;
+use sankh_core::Collection;
+use sankh_core::collection::{CONFIG_FILE, CollectionError, ENV_DIR};
 use sankh_core::env::{self, Env};
 use sankh_core::format::{self, RequestForm};
 use sankh_core::redact::Redactor;
 use sankh_core::report::Summary;
 use sankh_core::select::{self, Filters};
 use sankh_core::trust::{self, TrustStore};
+use sankh_core::workspace::WorkspaceError;
 use sankh_core::{RunContext, RunOptions, runner};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -33,6 +36,10 @@ impl IntoResponse for ApiError {
 
 fn bad(msg: impl Into<String>) -> ApiError {
     ApiError(StatusCode::BAD_REQUEST, msg.into(), None)
+}
+
+fn not_found(msg: impl Into<String>) -> ApiError {
+    ApiError(StatusCode::NOT_FOUND, msg.into(), None)
 }
 
 impl From<CollectionError> for ApiError {
@@ -57,49 +64,192 @@ impl From<std::io::Error> for ApiError {
     }
 }
 
+impl From<WorkspaceError> for ApiError {
+    fn from(e: WorkspaceError) -> Self {
+        let status = match &e {
+            WorkspaceError::Collection(CollectionError::NotFound(_)) => StatusCode::NOT_FOUND,
+            WorkspaceError::Collection(_) | WorkspaceError::Scratch => StatusCode::BAD_REQUEST,
+            WorkspaceError::AlreadyAdded { .. } | WorkspaceError::Overlaps { .. } => {
+                StatusCode::CONFLICT
+            }
+            WorkspaceError::Unknown(_) => StatusCode::NOT_FOUND,
+            WorkspaceError::Store { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        ApiError(status, e.to_string(), None)
+    }
+}
+
 type ApiResult = Result<Json<Value>, ApiError>;
 
-fn trust_json(state: &AppState) -> Value {
+/// The open collection with id `cid`.
+fn collection(state: &AppState, cid: &str) -> Result<Collection, ApiError> {
+    let registry = state.registry.read().unwrap();
+    let slot = registry
+        .slot(cid)
+        .ok_or_else(|| not_found(format!("no collection `{cid}` in the workspace")))?;
+    slot.collection
+        .clone()
+        .map_err(|e| not_found(format!("collection `{cid}` is unavailable: {e}")))
+}
+
+fn trust_json(collection: &Collection) -> Value {
     let store = TrustStore::load().unwrap_or_default();
-    serde_json::to_value(store.status(&state.collection.root)).unwrap_or(Value::Null)
+    serde_json::to_value(store.status(&collection.root)).unwrap_or(Value::Null)
+}
+
+fn slot_json(slot: &Slot) -> Value {
+    match &slot.collection {
+        Ok(c) => json!({
+            "id": slot.id,
+            "name": c.name(),
+            "root": c.root.display().to_string(),
+            "scratch": slot.is_scratch(),
+            "missing": false,
+            "error": null,
+            "trust": trust_json(c),
+            "default_env": c.config.default_env,
+        }),
+        Err(e) => json!({
+            "id": slot.id,
+            "name": slot.id,
+            "root": slot.path.display().to_string(),
+            "scratch": slot.is_scratch(),
+            "missing": true,
+            "error": e,
+            "trust": null,
+            "default_env": null,
+        }),
+    }
 }
 
 pub async fn info(State(state): State<Arc<AppState>>) -> ApiResult {
+    let registry = state.registry.read().unwrap();
+    let collections: Vec<Value> = registry.slots().iter().map(slot_json).collect();
     Ok(Json(json!({
-        "name": state.collection.name(),
-        "root": state.collection.root.display().to_string(),
         "version": sankh_core::version(),
-        "trust": trust_json(&state),
-        "default_env": state.collection.config.default_env,
+        "saved": registry.persist(),
+        "collections": collections,
     })))
 }
 
-pub async fn tree(State(state): State<Arc<AppState>>) -> ApiResult {
-    let tree = state.collection.tree()?;
+#[derive(Deserialize)]
+pub struct AddBody {
+    path: String,
+}
+
+pub async fn add_collection(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AddBody>,
+) -> ApiResult {
+    let path = expand_home(body.path.trim());
+    if path.as_os_str().is_empty() {
+        return Err(bad("path is required"));
+    }
+    let slot = {
+        let mut registry = state.registry.write().unwrap();
+        let id = registry.add(&path)?;
+        slot_json(registry.slot(&id).unwrap())
+    };
+    state.sync_watch();
+    Ok(Json(slot))
+}
+
+pub async fn remove_collection(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+) -> ApiResult {
+    state.registry.write().unwrap().remove(&cid)?;
+    state.captures.lock().unwrap().retain(|(c, _), _| *c != cid);
+    state.sync_watch();
+    Ok(Json(json!({ "unlinked": cid })))
+}
+
+fn expand_home(path: &str) -> std::path::PathBuf {
+    match (path.strip_prefix('~'), dirs::home_dir()) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
+            home.join(rest.trim_start_matches('/'))
+        }
+        _ => path.into(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DirsQuery {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+const MAX_DIRS: usize = 1000;
+
+/// Subdirectories of a folder, for the "Add folder" picker. Only names are
+/// returned, never file contents.
+pub async fn list_dirs(Query(q): Query<DirsQuery>) -> ApiResult {
+    let start = q
+        .path
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| expand_home(p.trim()))
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| "/".into());
+    let dir = start
+        .canonicalize()
+        .map_err(|_| not_found(format!("{} not found", start.display())))?;
+    if !dir.is_dir() {
+        return Err(bad(format!("{} is not a folder", dir.display())));
+    }
+    let mut dirs: Vec<Value> = std::fs::read_dir(&dir)?
+        .flatten()
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .filter(|e| e.path().is_dir())
+        .take(MAX_DIRS)
+        .map(|e| {
+            let p = e.path();
+            json!({
+                "name": e.file_name().to_string_lossy(),
+                "path": p.display().to_string(),
+                "collection": is_collection_dir(&p),
+            })
+        })
+        .collect();
+    dirs.sort_by_key(|d| d["name"].as_str().unwrap_or("").to_lowercase());
+    Ok(Json(json!({
+        "path": dir.display().to_string(),
+        "parent": dir.parent().map(|p| p.display().to_string()),
+        "collection": is_collection_dir(&dir),
+        "dirs": dirs,
+    })))
+}
+
+fn is_collection_dir(p: &std::path::Path) -> bool {
+    p.join(CONFIG_FILE).is_file() || p.join(ENV_DIR).is_dir()
+}
+
+pub async fn tree(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
+    let tree = collection(&state, &cid)?.tree()?;
     Ok(Json(serde_json::to_value(tree).unwrap()))
 }
 
-fn request_file(state: &AppState, path: &str) -> Result<std::path::PathBuf, ApiError> {
+fn request_file(c: &Collection, path: &str) -> Result<std::path::PathBuf, ApiError> {
     if !path.ends_with(".sh") {
         return Err(bad("request files must end in .sh"));
     }
-    Ok(state.collection.resolve(path)?)
+    Ok(c.resolve(path)?)
 }
 
-fn request_json(state: &AppState, path: &str, content: String) -> Value {
-    let abs = state.collection.root.join(path);
-    let req = state.collection.parse_file(&abs, &content);
+fn request_json(c: &Collection, path: &str, content: String) -> Value {
+    let abs = c.root.join(path);
+    let req = c.parse_file(&abs, &content);
     let form = RequestForm::from_request(&req);
     json!({ "path": path, "content": content, "request": req, "form": form })
 }
 
 pub async fn get_request(
     State(state): State<Arc<AppState>>,
-    Path(path): Path<String>,
+    Path((cid, path)): Path<(String, String)>,
 ) -> ApiResult {
-    let abs = request_file(&state, &path)?;
+    let c = collection(&state, &cid)?;
+    let abs = request_file(&c, &path)?;
     let content = std::fs::read_to_string(&abs)?;
-    Ok(Json(request_json(&state, &path, content)))
+    Ok(Json(request_json(&c, &path, content)))
 }
 
 #[derive(Deserialize)]
@@ -107,28 +257,71 @@ pub struct SaveBody {
     content: String,
 }
 
-pub async fn put_request(
-    State(state): State<Arc<AppState>>,
-    Path(path): Path<String>,
-    Json(body): Json<SaveBody>,
-) -> ApiResult {
-    let abs = request_file(&state, &path)?;
+/// Creates parent folders of `path` inside `c`, re-checking afterwards in
+/// case a symlink points outside the collection.
+fn prepare_parent(c: &Collection, path: &str, abs: &std::path::Path) -> Result<(), ApiError> {
     if let Some(dir) = abs.parent() {
         std::fs::create_dir_all(dir)?;
-        // Re-check after creating directories, in case of symlinks.
-        state.collection.resolve(&path)?;
+        c.resolve(path)?;
     }
+    Ok(())
+}
+
+pub async fn put_request(
+    State(state): State<Arc<AppState>>,
+    Path((cid, path)): Path<(String, String)>,
+    Json(body): Json<SaveBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let abs = request_file(&c, &path)?;
+    prepare_parent(&c, &path, &abs)?;
     std::fs::write(&abs, &body.content)?;
-    Ok(Json(request_json(&state, &path, body.content)))
+    Ok(Json(request_json(&c, &path, body.content)))
 }
 
 pub async fn delete_request(
     State(state): State<Arc<AppState>>,
-    Path(path): Path<String>,
+    Path((cid, path)): Path<(String, String)>,
 ) -> ApiResult {
-    let abs = request_file(&state, &path)?;
+    let c = collection(&state, &cid)?;
+    let abs = request_file(&c, &path)?;
     std::fs::remove_file(&abs)?;
     Ok(Json(json!({ "deleted": path })))
+}
+
+#[derive(Deserialize)]
+pub struct CopyBody {
+    path: String,
+    to: String,
+    #[serde(default)]
+    to_path: Option<String>,
+}
+
+/// Copies a request file into another collection; never overwrites.
+pub async fn copy_request(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<CopyBody>,
+) -> ApiResult {
+    let from = collection(&state, &cid)?;
+    let to = collection(&state, &body.to)?;
+    let src = request_file(&from, &body.path)?;
+    let content = std::fs::read_to_string(&src)?;
+    let dest_rel = body
+        .to_path
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| body.path.clone());
+    let dest = request_file(&to, &dest_rel)?;
+    if dest.exists() {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            format!("{dest_rel} already exists in `{}`", body.to),
+            None,
+        ));
+    }
+    prepare_parent(&to, &dest_rel, &dest)?;
+    std::fs::write(&dest, &content)?;
+    Ok(Json(json!({ "collection": body.to, "path": dest_rel })))
 }
 
 #[derive(Deserialize)]
@@ -138,9 +331,14 @@ pub struct ParseBody {
     path: Option<String>,
 }
 
-pub async fn parse(State(state): State<Arc<AppState>>, Json(body): Json<ParseBody>) -> ApiResult {
+pub async fn parse(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<ParseBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
     let path = body.path.unwrap_or_else(|| "request.sh".into());
-    Ok(Json(request_json(&state, &path, body.content)))
+    Ok(Json(request_json(&c, &path, body.content)))
 }
 
 #[derive(Deserialize)]
@@ -167,17 +365,22 @@ pub async fn import(Json(body): Json<ImportBody>) -> ApiResult {
     Ok(Json(json!({ "content": content })))
 }
 
-pub async fn envs(State(state): State<Arc<AppState>>) -> ApiResult {
+pub async fn envs(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
+    let c = collection(&state, &cid)?;
     Ok(Json(json!({
-        "envs": env::list_envs(&state.collection),
-        "default": state.collection.config.default_env,
+        "envs": env::list_envs(&c),
+        "default": c.config.default_env,
     })))
 }
 
 /// Variables of an environment, for editor autocomplete. Secret values are masked.
-pub async fn env_vars(State(state): State<Arc<AppState>>, Path(name): Path<String>) -> ApiResult {
+pub async fn env_vars(
+    State(state): State<Arc<AppState>>,
+    Path((cid, name)): Path<(String, String)>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
     let env_name = (name != "_").then_some(name.as_str());
-    let env = Env::load(&state.collection, env_name).map_err(|e| bad(e.to_string()))?;
+    let env = Env::load(&c, env_name).map_err(|e| bad(e.to_string()))?;
     let redactor = Redactor::from_vars(&env.file_vars);
     let mut vars: Vec<Value> = env
         .file_vars
@@ -185,8 +388,8 @@ pub async fn env_vars(State(state): State<Arc<AppState>>, Path(name): Path<Strin
         .map(|(k, v)| json!({ "name": k, "value": redactor.display_var(k, v), "source": "file" }))
         .collect();
     let captures = state.captures.lock().unwrap();
-    if let Some(c) = captures.get(&name) {
-        for (k, v) in c {
+    if let Some(caps) = captures.get(&(cid, name)) {
+        for (k, v) in caps {
             vars.push(
                 json!({ "name": k, "value": redactor.display_var(k, v), "source": "capture" }),
             );
@@ -203,24 +406,25 @@ pub struct EnvQuery {
 
 pub async fn clear_captures(
     State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
     Query(q): Query<EnvQuery>,
 ) -> ApiResult {
+    collection(&state, &cid)?;
     let key = q.env.unwrap_or_else(|| "_".into());
-    state.captures.lock().unwrap().remove(&key);
+    state.captures.lock().unwrap().remove(&(cid, key.clone()));
     Ok(Json(json!({ "cleared": key })))
 }
 
-pub async fn get_trust(State(state): State<Arc<AppState>>) -> ApiResult {
-    Ok(Json(trust_json(&state)))
+pub async fn get_trust(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
+    Ok(Json(trust_json(&collection(&state, &cid)?)))
 }
 
-pub async fn post_trust(State(state): State<Arc<AppState>>) -> ApiResult {
+pub async fn post_trust(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
+    let c = collection(&state, &cid)?;
     let mut store = TrustStore::load().map_err(|e| bad(e.to_string()))?;
-    store
-        .trust(&state.collection.root)
-        .map_err(|e| bad(e.to_string()))?;
+    store.trust(&c.root).map_err(|e| bad(e.to_string()))?;
     store.save().map_err(|e| bad(e.to_string()))?;
-    Ok(Json(trust_json(&state)))
+    Ok(Json(trust_json(&c)))
 }
 
 #[derive(Deserialize)]
@@ -234,26 +438,26 @@ pub struct RunBody {
     tags: Vec<String>,
 }
 
-pub async fn start_run(State(state): State<Arc<AppState>>, Json(body): Json<RunBody>) -> ApiResult {
-    let collection = state.collection.clone();
+pub async fn start_run(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<RunBody>,
+) -> ApiResult {
+    let collection = collection(&state, &cid)?;
     let trusted = trust::ensure(&collection, false).map_err(|e| {
         ApiError(
             StatusCode::FORBIDDEN,
             e.to_string(),
-            Some(trust_json(&state)),
+            Some(trust_json(&collection)),
         )
     })?;
     let target = collection.resolve(&body.path)?;
     if !target.exists() {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            format!("{} not found", body.path),
-            None,
-        ));
+        return Err(not_found(format!("{} not found", body.path)));
     }
     let env_name = body.env.filter(|e| !e.is_empty());
     let mut env = Env::load(&collection, env_name.as_deref()).map_err(|e| bad(e.to_string()))?;
-    let capture_key = env_name.clone().unwrap_or_else(|| "_".into());
+    let capture_key = (cid.clone(), env_name.clone().unwrap_or_else(|| "_".into()));
     if let Some(c) = state.captures.lock().unwrap().get(&capture_key) {
         env.captures = c.clone();
     }
@@ -270,7 +474,8 @@ pub async fn start_run(State(state): State<Arc<AppState>>, Json(body): Json<RunB
     let handle = RunHandle::new();
     state.runs.insert(id.clone(), handle.clone());
     let paths: Vec<String> = files.iter().map(|f| collection.rel(f)).collect();
-    handle.push(json!({ "type": "start", "total": files.len(), "paths": paths }));
+    handle
+        .push(json!({ "type": "start", "collection": cid, "total": files.len(), "paths": paths }));
 
     let state2 = state.clone();
     tokio::task::spawn_blocking(move || {
@@ -303,15 +508,20 @@ pub async fn run_events(
     let handle = state
         .runs
         .get(&id)
-        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "unknown run".into(), None))?;
+        .ok_or_else(|| not_found("unknown run"))?;
     Ok(Sse::new(handle.stream()).keep_alive(KeepAlive::default()))
 }
 
+/// Server-sent `{"changed": "<collection id>"}` whenever files change;
+/// `null` (after missed events) means every collection.
 pub async fn change_events(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     use axum::response::sse::Event;
     use futures::StreamExt;
     let rx = state.changes.subscribe();
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .map(|_| Ok::<_, std::convert::Infallible>(Event::default().data("changed")));
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).map(|res| {
+        Ok::<_, std::convert::Infallible>(
+            Event::default().data(json!({ "changed": res.ok() }).to_string()),
+        )
+    });
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
