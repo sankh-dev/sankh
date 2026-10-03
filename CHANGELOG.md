@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1] - 2026-10-03
+
+### Fixed
+
+- Desktop app (Linux AppImage): requests failed with `curl: symbol lookup
+  error ... libnghttp2` because request files inherited the AppImage's
+  `LD_LIBRARY_PATH`, which pointed the system `curl` at older bundled
+  libraries. Request files now get the environment without the AppImage's
+  paths.
+
 ## [0.2.0] - 2026-10-03
 
 ### Added

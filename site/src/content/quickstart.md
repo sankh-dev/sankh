@@ -4,7 +4,7 @@
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.0 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.1 sh
 ```
 
 The installer downloads the release archive for your platform from GitHub,

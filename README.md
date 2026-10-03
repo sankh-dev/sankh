@@ -33,7 +33,7 @@ sh pets/02-create.sh
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.0 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.1 sh
 ```
 
 Or build from source (needs Rust and Node 22):
