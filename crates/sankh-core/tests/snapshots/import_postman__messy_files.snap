@@ -1,0 +1,113 @@
+---
+source: crates/sankh-core/tests/import_postman.rs
+expression: tree(&out)
+---
+=== 01-forms-files/01-upload-avatar.sh
+#!/usr/bin/env bash
+# @name Upload avatar
+curl -sS -X POST "${BASE_URL}/avatar" \
+  --form-string 'name=@not-a-file;type=text/plain' \
+  -F avatar=@/Users/me/Pictures/cat.png
+
+=== 01-forms-files/02-login-form.sh
+#!/usr/bin/env bash
+# @name Login form
+curl -sS -u "${BASIC_USER}:${BASIC_PASSWORD}" -X POST "${BASE_URL}/oauth/token" \
+  --data-urlencode grant_type=password \
+  --data-urlencode 'scope=read write'
+
+=== 01-forms-files/03-upload-raw-file.sh
+#!/usr/bin/env bash
+# @name Upload raw file
+# @require GUID
+curl -sS -X PUT "${BASE_URL}/blobs/${GUID}" \
+  --data-binary @./data/blob.bin
+
+=== 02-quoting-it-s-5-quoted/01-echo-tricky-body.sh
+#!/usr/bin/env bash
+# @name Echo tricky body
+# [imported pre-request script, not executed]
+# | pm.variables.set('now', Date.now());
+# [imported test script, not executed]
+# | pm.test('ok', function () {
+# |     pm.response.to.be.success;
+# |     const body = pm.response.json();
+# |     if (body.items.length > 0) { console.log('has items'); }
+# | });
+# @expect status 2xx
+curl -sS "${BASE_URL}/echo?debug=1" \
+  -H 'Content-Type: application/json' \
+  -H "X-Price: \$5 and ${CURRENCY}" \
+  -d "{
+  \"text\": \"it's \$HOME \`whoami\` \\\\ ünïcødé 🐚\",
+  \"user\": \"${USER_ID}\"
+}"
+
+=== 02-quoting-it-s-5-quoted/02-graphql-search.sh
+#!/usr/bin/env bash
+# @name GraphQL search
+curl -sS "${BASE_URL}/graphql?api_key=${API_KEY}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"query\":\"query Search(\$q: String!) { search(q: \$q) { id } }\",\"variables\":{\"q\":\"${TERM}\"}}"
+
+=== 02-quoting-it-s-5-quoted/03-signed-aws-call.sh
+#!/usr/bin/env bash
+# @name Signed AWS call
+# TODO: `awsv4` auth from Postman was not converted; add the header or curl flag by hand
+curl -sS https://s3.amazonaws.com/bucket
+
+=== 02-quoting-it-s-5-quoted/04-raw-starting-with-at.sh
+#!/usr/bin/env bash
+# @name Raw starting with at
+curl -sS "${BASE_URL}/text" \
+  -H 'Content-Type: text/plain' \
+  --data-raw @literal
+
+=== 04-bare-url-request.sh
+#!/usr/bin/env bash
+# @name Bare URL request
+curl -sS https://example.com/health
+
+=== 05-legacy-v2-0-bearer.sh
+#!/usr/bin/env bash
+# @name Legacy v2.0 bearer
+curl -sS -g "${BASE_URL}/legacy?expand[]=card" \
+  -H 'Accept: application/json' \
+  -H 'X-Version: 2' \
+  -H "Authorization: Bearer ${BEARER_TOKEN}"
+
+=== environments/default.env
+# Imported from environment "default"
+BASE_URL=https://api.example.com
+CURRENCY=EUR
+GREETING="hello \"world\" from ${CURRENCY}"
+
+=== sankh.toml
+name = "Messy API"
+format = 1
+default_env = "default"
+
+=== .gitignore
+.env.local
+sankh-report.*
+
+=== .env.example
+# Copy to .env.local (gitignored) and fill in. Secrets never go in environments/*.env.
+
+# basic auth username; the literal value from Postman was not written to disk
+BASIC_USER=
+
+# basic auth password; the literal value from Postman was not written to disk
+BASIC_PASSWORD=
+
+# bearer token; the literal value from Postman was not written to disk
+BEARER_TOKEN=
+
+# secret; its value was not written to environments/ (set it in .env.local or CI)
+API_KEY=
+
+# secret; its value was not written to environments/ (set it in .env.local or CI)
+DB_PASSWORD=
+
+# replaces the dynamic variable {{$guid}}; set a value before running
+GUID=

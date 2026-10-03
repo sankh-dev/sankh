@@ -1,0 +1,70 @@
+---
+source: crates/sankh-core/tests/import_postman.rs
+expression: out.report
+---
+collection: Messy API
+requests: 9
+folders: 2
+environments:
+  - default
+renamed:
+  - from: $guid
+    to: GUID
+  - from: apiKey
+    to: API_KEY
+  - from: baseUrl
+    to: BASE_URL
+  - from: currency
+    to: CURRENCY
+  - from: dbPassword
+    to: DB_PASSWORD
+  - from: greeting
+    to: GREETING
+  - from: term
+    to: TERM
+  - from: userId
+    to: USER_ID
+placeholders:
+  - name: BASIC_USER
+    note: basic auth username; the literal value from Postman was not written to disk
+  - name: BASIC_PASSWORD
+    note: basic auth password; the literal value from Postman was not written to disk
+  - name: BEARER_TOKEN
+    note: bearer token; the literal value from Postman was not written to disk
+  - name: API_KEY
+    note: secret; its value was not written to environments/ (set it in .env.local or CI)
+  - name: DB_PASSWORD
+    note: secret; its value was not written to environments/ (set it in .env.local or CI)
+  - name: GUID
+    note: "replaces the dynamic variable {{$guid}}; set a value before running"
+warnings:
+  - path: ""
+    message: collection-level prerequest script (1 lines) is not imported; Sankh has no shared scripts
+  - path: 01-forms-files/
+    message: folder-level test script (1 lines) is not imported; Sankh has no shared scripts
+  - path: 01-forms-files/01-upload-avatar.sh
+    message: "disabled header `X-Debug` was dropped"
+  - path: 01-forms-files/01-upload-avatar.sh
+    message: "file field `avatar` points to `/Users/me/Pictures/cat.png`; check the path exists here"
+  - path: 01-forms-files/01-upload-avatar.sh
+    message: "disabled form field `old` was dropped"
+  - path: 01-forms-files/02-login-form.sh
+    message: literal basic auth username replaced with $BASIC_USER; set it in .env.local
+  - path: 01-forms-files/02-login-form.sh
+    message: literal basic auth password replaced with $BASIC_PASSWORD; set it in .env.local
+  - path: 01-forms-files/03-upload-raw-file.sh
+    message: "binary body points to `./data/blob.bin`; check the path exists here"
+  - path: 01-forms-files/03-upload-raw-file.sh
+    message: uses dynamic variables with no Sankh equivalent (GUID); set them before running
+  - path: 02-quoting-it-s-5-quoted/01-echo-tricky-body.sh
+    message: "disabled query parameter `verbose` was dropped"
+  - path: 02-quoting-it-s-5-quoted/01-echo-tricky-body.sh
+    message: pre-request script could not be fully converted; kept as comments
+  - path: 02-quoting-it-s-5-quoted/01-echo-tricky-body.sh
+    message: test script could not be fully converted; kept as comments
+  - path: 02-quoting-it-s-5-quoted/03-signed-aws-call.sh
+    message: "`awsv4` auth is not converted; added a TODO comment"
+  - path: 03-empty-folder/
+    message: "folder `Empty folder` has no requests and was skipped"
+  - path: 05-legacy-v2-0-bearer.sh
+    message: literal bearer token replaced with $BEARER_TOKEN; set it in .env.local

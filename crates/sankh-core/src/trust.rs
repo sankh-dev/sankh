@@ -64,13 +64,7 @@ pub enum TrustError {
 }
 
 pub fn store_path() -> PathBuf {
-    if let Some(dir) = std::env::var_os("SANKH_CONFIG_DIR") {
-        return PathBuf::from(dir).join("trust.toml");
-    }
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("sankh")
-        .join("trust.toml")
+    crate::paths::config_dir().join("trust.toml")
 }
 
 impl TrustStore {

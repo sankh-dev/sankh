@@ -1,0 +1,79 @@
+---
+source: crates/sankh-core/tests/import_postman.rs
+expression: tree(&out)
+---
+=== 01-auth/01-log-in.sh
+#!/usr/bin/env bash
+# @name Log in
+# @expect status 200
+# @expect json .token exists
+# @capture TOKEN=.token
+curl -sS "${BASE_URL}/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${PET_USER}\",\"password\":\"${PET_PASSWORD}\"}"
+
+=== 02-pets/01-list-pets.sh
+#!/usr/bin/env bash
+# @name List pets
+# @expect status 200
+curl -sS "${BASE_URL}/pets" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+=== 02-pets/02-create-pet.sh
+#!/usr/bin/env bash
+# @name Create pet
+# @description Creates a pet and stores its id for the next steps.
+# @expect status 201
+# @expect json .name == "Rex"
+# @expect json .tags contains "good-boy"
+# @capture PET_ID=.id
+# @capture REQUEST_ID=header X-Request-Id
+curl -sS "${BASE_URL}/pets" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{"name":"Rex","tags":["good-boy"]}'
+
+=== 02-pets/03-get-pet.sh
+#!/usr/bin/env bash
+# @name Get pet
+# @expect status 200
+# @expect json .status == "available"
+curl -sS "${BASE_URL}/pets/${PET_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+=== 02-pets/04-delete-pet.sh
+#!/usr/bin/env bash
+# @name Delete pet
+# @expect status 204
+curl -sS -X DELETE "${BASE_URL}/pets/${PET_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+=== 02-pets/05-deleted-pet-is-gone.sh
+#!/usr/bin/env bash
+# @name Deleted pet is gone
+# @expect status 404
+# @expect json .error == "not found"
+curl -sS "${BASE_URL}/pets/${PET_ID}" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+=== environments/petstore-ci.env
+# Imported from environment "Petstore CI"
+BASE_URL=http://localhost:4010
+TOKEN=
+PET_ID=
+PET_USER=ci
+
+=== sankh.toml
+name = "Petstore"
+format = 1
+default_env = "petstore-ci"
+
+=== .gitignore
+.env.local
+sankh-report.*
+
+=== .env.example
+# Copy to .env.local (gitignored) and fill in. Secrets never go in environments/*.env.
+
+# secret; its value was not written to environments/ (set it in .env.local or CI)
+PET_PASSWORD=

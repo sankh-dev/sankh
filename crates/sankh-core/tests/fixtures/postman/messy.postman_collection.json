@@ -1,0 +1,184 @@
+{
+	"info": {
+		"name": "Messy API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"exec": ["pm.request.headers.add({key: 'X-Trace', value: pm.variables.replaceIn('{{$guid}}')});"]
+			}
+		}
+	],
+	"item": [
+		{
+			"name": "Forms & Files",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": ["pm.test('fast', () => pm.expect(pm.response.responseTime).to.be.below(500));"]
+					}
+				}
+			],
+			"item": [
+				{
+					"name": "Upload avatar",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "X-Debug", "value": "1", "disabled": true }
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "name", "value": "@not-a-file;type=text/plain", "type": "text" },
+								{ "key": "avatar", "type": "file", "src": "/Users/me/Pictures/cat.png" },
+								{ "key": "old", "value": "x", "type": "text", "disabled": true }
+							]
+						},
+						"url": "{{baseUrl}}/avatar"
+					}
+				},
+				{
+					"name": "Login form",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{ "key": "username", "value": "admin" },
+								{ "key": "password", "value": "hunter2" }
+							]
+						},
+						"method": "POST",
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "password" },
+								{ "key": "scope", "value": "read write" }
+							]
+						},
+						"url": "{{baseUrl}}/oauth/token"
+					}
+				},
+				{
+					"name": "Upload raw file",
+					"request": {
+						"method": "PUT",
+						"body": { "mode": "file", "file": { "src": "./data/blob.bin" } },
+						"url": "{{baseUrl}}/blobs/{{$guid}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "Quoting: it's $5 & \"quoted\"",
+			"item": [
+				{
+					"name": "Echo tricky body",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": { "exec": ["pm.variables.set('now', Date.now());"] }
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('ok', function () {",
+									"    pm.response.to.be.success;",
+									"    const body = pm.response.json();",
+									"    if (body.items.length > 0) { console.log('has items'); }",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Price", "value": "$5 and {{currency}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"it's $HOME `whoami` \\\\ ünïcødé 🐚\",\n  \"user\": \"{{userId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/echo?debug=1",
+							"host": ["{{baseUrl}}"],
+							"path": ["echo"],
+							"query": [
+								{ "key": "debug", "value": "1" },
+								{ "key": "verbose", "value": "true", "disabled": true }
+							]
+						}
+					}
+				},
+				{
+					"name": "GraphQL search",
+					"request": {
+						"auth": {
+							"type": "apikey",
+							"apikey": [
+								{ "key": "key", "value": "api_key" },
+								{ "key": "value", "value": "{{apiKey}}" },
+								{ "key": "in", "value": "query" }
+							]
+						},
+						"method": "POST",
+						"body": {
+							"mode": "graphql",
+							"graphql": {
+								"query": "query Search($q: String!) { search(q: $q) { id } }",
+								"variables": "{\"q\": \"{{term}}\"}"
+							}
+						},
+						"url": "{{baseUrl}}/graphql"
+					}
+				},
+				{
+					"name": "Signed AWS call",
+					"request": {
+						"auth": { "type": "awsv4", "awsv4": [{ "key": "accessKey", "value": "AKIA" }] },
+						"method": "GET",
+						"url": "https://s3.amazonaws.com/bucket"
+					}
+				},
+				{
+					"name": "Raw starting with at",
+					"request": {
+						"method": "POST",
+						"body": { "mode": "raw", "raw": "@literal", "options": { "raw": { "language": "text" } } },
+						"url": "{{baseUrl}}/text"
+					}
+				}
+			]
+		},
+		{
+			"name": "Empty folder",
+			"item": []
+		},
+		{
+			"name": "Bare URL request",
+			"request": "https://example.com/health"
+		},
+		{
+			"name": "Legacy v2.0 bearer",
+			"request": {
+				"auth": { "type": "bearer", "bearer": { "token": "literal-token-123" } },
+				"method": "get",
+				"header": "Accept: application/json\nX-Version: 2",
+				"url": "{{baseUrl}}/legacy?expand[]=card"
+			}
+		}
+	],
+	"variable": [
+		{ "key": "baseUrl", "value": "https://api.example.com" },
+		{ "key": "currency", "value": "EUR" },
+		{ "key": "apiKey", "value": "sk_live_should_not_leak", "type": "string" },
+		{ "key": "dbPassword", "value": "pw-should-not-leak", "type": "secret" },
+		{ "key": "greeting", "value": "hello \"world\" from {{currency}}" }
+	]
+}

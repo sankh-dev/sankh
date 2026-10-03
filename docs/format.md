@@ -25,6 +25,9 @@ my-api/
 - Request files end in `.sh`. Hidden entries and the root-level
   `environments/`, `node_modules/` and `target/` folders are ignored.
 - Folders with no request files are not shown.
+- A collection is self-contained. When several collections are open in one
+  workspace (`sankh serve`), they never share environments, captured values,
+  ordering or trust, and collections cannot be nested inside each other.
 
 ## `sankh.toml`
 

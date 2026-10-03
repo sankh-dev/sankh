@@ -1,0 +1,28 @@
+---
+source: crates/sankh-core/tests/import_postman.rs
+expression: out.report
+---
+collection: Petstore
+requests: 6
+folders: 2
+environments:
+  - petstore-ci
+renamed:
+  - from: baseUrl
+    to: BASE_URL
+  - from: petId
+    to: PET_ID
+  - from: petPassword
+    to: PET_PASSWORD
+  - from: petUser
+    to: PET_USER
+  - from: requestId
+    to: REQUEST_ID
+  - from: token
+    to: TOKEN
+placeholders:
+  - name: PET_PASSWORD
+    note: secret; its value was not written to environments/ (set it in .env.local or CI)
+warnings:
+  - path: ""
+    message: 1 item(s) set auth with empty credentials; used the inherited auth instead

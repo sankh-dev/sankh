@@ -79,11 +79,31 @@ pub fn render(form: &RequestForm) -> String {
     out
 }
 
+const BODY_VALUE_FLAGS: &[&str] = &["-F", "--form", "--form-string", "--data-urlencode"];
+
+/// Splits flags into those rendered on the `curl` line and body-like value
+/// flags (`-F`, `--data-urlencode`, ...) rendered one per line after the
+/// headers. Rendering emits them in that order, so it is the canonical order.
+pub fn split_flags(flags: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut line = Vec::new();
+    let mut body = Vec::new();
+    let mut it = flags.iter();
+    while let Some(f) = it.next() {
+        if BODY_VALUE_FLAGS.contains(&f.as_str()) {
+            body.push(f.clone());
+            body.extend(it.next().cloned());
+        } else {
+            line.push(f.clone());
+        }
+    }
+    (line, body)
+}
+
 /// Renders a curl command over multiple lines with continuations.
 pub fn render_curl(c: &CurlCommand) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut first = String::from("curl");
-    let mut flags = c.flags.clone();
+    let (mut flags, body_flags) = split_flags(&c.flags);
     if flags.is_empty() {
         flags.push("-sS".into());
     }
@@ -101,6 +121,9 @@ pub fn render_curl(c: &CurlCommand) -> String {
     parts.push(first);
     for h in &c.headers {
         parts.push(format!("-H {}", quote(&format!("{}: {}", h.name, h.value))));
+    }
+    for pair in body_flags.chunks(2) {
+        parts.push(pair.iter().map(|w| quote(w)).collect::<Vec<_>>().join(" "));
     }
     if let Some(body) = &c.body {
         let flag = c.body_flag.as_deref().unwrap_or("-d");
@@ -134,6 +157,15 @@ mod tests {
         assert_eq!(rendered, src);
         let again = parser::parse(&rendered, "x.sh");
         assert_eq!(again, req);
+    }
+
+    #[test]
+    fn form_fields_render_on_their_own_lines() {
+        let src = "#!/usr/bin/env bash\n# @name Upload\ncurl -sS -u \"$U:$P\" -X POST \"$BASE_URL/up\" \\\n  -H 'Accept: */*' \\\n  -F file=@./a.png \\\n  --form-string 'note=a;b'\n";
+        let req = parser::parse(src, "x.sh");
+        assert_eq!(req.mode, Mode::Form, "{:?}", req.raw_reason);
+        let form = RequestForm::from_request(&req).unwrap();
+        assert_eq!(render(&form), src);
     }
 
     #[test]
