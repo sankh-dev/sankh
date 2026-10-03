@@ -3568,6 +3568,7 @@ name = "sankh-desktop"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "sankh-core",
  "sankh-server",
  "tauri",
  "tauri-build",

@@ -38,6 +38,8 @@ fn extra_dirs() -> Vec<PathBuf> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
     let Ok(mut child) = Command::new(&shell)
         .args(["-ilc", &format!("printf '{MARK}%s{MARK}' \"$PATH\"")])
+        .env_clear()
+        .envs(sankh_core::env::host_process_vars())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

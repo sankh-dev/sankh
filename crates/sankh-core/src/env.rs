@@ -55,7 +55,7 @@ impl Env {
         }
         Ok(Env {
             file_vars,
-            process: std::env::vars().collect(),
+            process: host_process_vars(),
             captures: Vars::new(),
         })
     }
@@ -82,6 +82,42 @@ impl Env {
             .filter(|v| self.get(v).is_none_or(|s| s.is_empty()))
             .collect()
     }
+}
+
+/// The process environment, minus what an AppImage launcher injected.
+///
+/// The desktop AppImage points `LD_LIBRARY_PATH`, `XDG_DATA_DIRS`, GTK
+/// variables and so on into its own mount. Request files run the system's
+/// `curl`, which breaks when it loads the AppImage's older libraries.
+pub fn host_process_vars() -> Vars {
+    let vars: Vars = std::env::vars().collect();
+    match (vars.get("APPIMAGE"), vars.get("APPDIR")) {
+        (Some(_), Some(appdir)) if !appdir.is_empty() => {
+            let appdir = appdir.clone();
+            strip_appdir(vars, &appdir)
+        }
+        _ => vars,
+    }
+}
+
+/// Drops `:`-separated entries under `appdir` from every variable, and
+/// variables left with no entries.
+fn strip_appdir(vars: Vars, appdir: &str) -> Vars {
+    let root = appdir.trim_end_matches('/');
+    let prefix = format!("{root}/");
+    let inside = |entry: &str| entry == root || entry.starts_with(&prefix);
+    vars.into_iter()
+        .filter_map(|(key, value)| {
+            if !value.split(':').any(inside) {
+                return Some((key, value));
+            }
+            let kept: Vec<&str> = value
+                .split(':')
+                .filter(|e| !e.is_empty() && !inside(e))
+                .collect();
+            (!kept.is_empty()).then(|| (key, kept.join(":")))
+        })
+        .collect()
 }
 
 pub fn read_env_file(path: &Path) -> Result<Vars, EnvError> {
@@ -145,5 +181,42 @@ mod tests {
             Err(EnvError::NotFound { .. })
         ));
         assert_eq!(list_envs(&c), vec!["dev"]);
+    }
+
+    #[test]
+    fn strips_appimage_paths() {
+        let appdir = "/tmp/.mount_SankhAb12";
+        let vars = Vars::from([
+            (
+                "LD_LIBRARY_PATH".to_string(),
+                format!("{appdir}/usr/lib/:{appdir}/lib64/:/opt/lib"),
+            ),
+            (
+                "XDG_DATA_DIRS".to_string(),
+                format!("{appdir}/usr/share:/usr/share:/usr/local/share"),
+            ),
+            (
+                "GDK_PIXBUF_MODULE_FILE".to_string(),
+                format!("{appdir}//usr/lib/gdk-pixbuf-2.0/loaders.cache"),
+            ),
+            ("APPDIR".to_string(), appdir.to_string()),
+            (
+                "APPIMAGE".to_string(),
+                "/home/me/Sankh.AppImage".to_string(),
+            ),
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+            (
+                "OTHER".to_string(),
+                "/tmp/.mount_SankhAb12x/keep".to_string(),
+            ),
+        ]);
+        let out = strip_appdir(vars, appdir);
+        assert_eq!(out["LD_LIBRARY_PATH"], "/opt/lib");
+        assert_eq!(out["XDG_DATA_DIRS"], "/usr/share:/usr/local/share");
+        assert!(!out.contains_key("GDK_PIXBUF_MODULE_FILE"));
+        assert!(!out.contains_key("APPDIR"));
+        assert_eq!(out["APPIMAGE"], "/home/me/Sankh.AppImage");
+        assert_eq!(out["PATH"], "/usr/bin:/bin");
+        assert_eq!(out["OTHER"], "/tmp/.mount_SankhAb12x/keep");
     }
 }

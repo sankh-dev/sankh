@@ -20,6 +20,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+sankh-core.workspace = true
 sankh-server.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
