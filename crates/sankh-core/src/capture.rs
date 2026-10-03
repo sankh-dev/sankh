@@ -61,4 +61,18 @@ mod tests {
         );
         assert_eq!(extract(&CaptureSource::Status, &r).unwrap(), "201");
     }
+
+    #[test]
+    fn extracts_from_arrays() {
+        let r = Response {
+            body: br#"{"data":[{"id":"u_1"},{"id":"u_2"}]}"#.to_vec(),
+            ..Default::default()
+        };
+        let jq = |e: &str| CaptureSource::Jq { expr: e.into() };
+        assert_eq!(extract(&jq(".data[0].id"), &r).unwrap(), "u_1");
+        assert_eq!(
+            extract(&jq(".data"), &r).unwrap(),
+            r#"[{"id":"u_1"},{"id":"u_2"}]"#
+        );
+    }
 }

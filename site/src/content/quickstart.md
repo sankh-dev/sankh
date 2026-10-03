@@ -70,7 +70,9 @@ sh pets/02-create.sh
 ```
 
 The full file format, including every annotation, is described in
-[Collection format](format.md).
+[Collection format](format.md). For a walkthrough of `@expect`, `@capture`
+and chaining requests into a flow, see
+[Assertions and chaining](assertions.md).
 
 ## Try the bundled example
 
@@ -92,6 +94,7 @@ raw-mode file calls curl several times, the last response is checked.
 
 ## Next steps
 
+- [Assertions and chaining](assertions.md): check responses and pass values between requests.
 - [Running in CI](ci.md): flags, reports and exit codes.
 - [Web UI](serve.md): editing and running requests in the browser.
 - [Desktop app](desktop.md): the same UI in a native window.

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Docs
+
+- New **Assertions and chaining** guide: `@expect` examples (including
+  arrays), `@capture` sources, and a worked multi-step flow based on the
+  petstore example.
+
 ## [0.2.1] - 2026-10-03
 
 ### Fixed

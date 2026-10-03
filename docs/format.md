@@ -140,6 +140,9 @@ explicit expectation for tests that expect errors, e.g. `@expect status 404`.
 - Captures run only when every assertion passed, live only for the current run,
   and are never written to disk. Later captures override earlier ones.
 
+See [Assertions and chaining](https://sankh.dev/docs/assertions) for worked examples, including
+arrays and a multi-step flow.
+
 ## Environments
 
 Lowest to highest priority:

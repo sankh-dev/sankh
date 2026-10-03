@@ -19,7 +19,8 @@ sankh run [PATH] [--env NAME] [--folder F]... [--tag T]... [--all]
   requests too.
 
 Values captured with `@capture` are available to every later request in the
-same run, so a login request can feed its token to the rest of the collection.
+same run, so a login request can feed its token to the rest of the collection
+(see [Assertions and chaining](assertions.md)).
 
 ## Exit codes
 

@@ -193,6 +193,37 @@ mod tests {
     }
 
     #[test]
+    fn array_examples_from_docs() {
+        use crate::parser::parse_expect;
+        use crate::request::Expect;
+
+        let body = br#"{"data":[{"id":"u_1","name":"Ann"},{"id":"u_2","name":"Bob"}]}"#;
+        let run = |line: &str| {
+            let Ok(Some(Expect::Json { expr, op, value })) = parse_expect(line) else {
+                panic!("`{line}` did not parse as a json expectation");
+            };
+            check_json(&expr, op, value.as_deref(), body, &lookup)
+        };
+        for line in [
+            r#"json .data[0].id == "u_1""#,
+            r#"json .data[-1].id == "u_2""#,
+            "json .data | length == 2",
+            "json .data | length > 0",
+            r#"json .data | map(.id) contains "u_2""#,
+            r#"json any(.data[]; .name == "Bob") == true"#,
+            r#"json all(.data[]; .id | startswith("u_")) == true"#,
+        ] {
+            let r = run(line);
+            assert!(r.passed, "`{line}` failed: {:?}", r.message);
+        }
+        let r = run(r#"json .data[].id == "u_1""#);
+        assert_eq!(
+            r.message.as_deref(),
+            Some("`.data[].id` produced 2 values; expected one")
+        );
+    }
+
+    #[test]
     fn status_matching() {
         let p = [StatusPattern::Class { class: 2 }];
         assert!(check_status(&p, 204).passed);

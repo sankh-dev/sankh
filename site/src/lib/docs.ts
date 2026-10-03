@@ -16,6 +16,11 @@ export const docPages: DocPage[] = [
 		description: 'Folder layout, request files, annotations, and environments.'
 	},
 	{
+		slug: 'assertions',
+		title: 'Assertions and chaining',
+		description: 'Check responses, capture values, and chain requests into a flow.'
+	},
+	{
 		slug: 'ci',
 		title: 'Running in CI',
 		description: 'sankh run flags, exit codes, reports, and CI examples.'
