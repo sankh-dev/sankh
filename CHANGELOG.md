@@ -21,8 +21,8 @@
   environments into a Sankh folder. Common test scripts become `@expect` and
   `@capture`, and secrets go to `.env.example` instead of being written to
   disk.
-- UI: add-folder dialog with a directory browser, Postman import, and
-  per-collection sections in the sidebar.
+- UI: add-folder dialog with a directory browser, and per-collection
+  sections in the sidebar.
 
 ### Changed
 

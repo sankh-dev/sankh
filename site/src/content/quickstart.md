@@ -30,30 +30,8 @@ cargo install --path crates/sankh-cli
 
 Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL.
 
-## Desktop app
-
-The desktop app is the same web UI in a native window, with a native folder
-picker. It runs the server in-process on a random loopback port behind a
-per-launch token, and uses the same saved workspace as `sankh serve`. Download
-it from the [latest release](https://github.com/sankh-dev/sankh/releases/latest):
-
-| Platform | File |
-| --- | --- |
-| macOS (Apple silicon) | `Sankh_<version>_aarch64.dmg` |
-| macOS (Intel) | `Sankh_<version>_x64.dmg` |
-| Windows | `Sankh_<version>_x64-setup.exe` or `.msi` |
-| Linux | `Sankh_<version>_amd64.AppImage` or `.deb` |
-
-The installers are not code signed yet:
-
-- **macOS:** right-click the app and choose Open the first time, or run
-  `xattr -dr com.apple.quarantine /Applications/Sankh.app`.
-- **Windows:** in the SmartScreen prompt choose More info, then Run anyway.
-- **Linux:** the AppImage needs `chmod +x`; the app uses the system
-  WebKitGTK (`libwebkit2gtk-4.1`).
-
-The desktop app still needs `curl` and a POSIX shell (Git Bash on Windows; it
-finds a standard Git for Windows install even when it is not on `PATH`).
+Prefer a native window? Download the [desktop app](desktop.md) for macOS,
+Windows or Linux. It is the same UI as `sankh serve`.
 
 ## Your first collection
 
@@ -62,7 +40,12 @@ sankh init my-api              # scaffold a collection
 sankh trust my-api             # request files are scripts: trust before running
 sankh run my-api --env dev     # run everything, exit non-zero on failure
 sankh serve my-api             # web UI on http://localhost:4747
+sankh workspace add my-api     # or keep it, so plain `sankh serve` opens it
 ```
+
+Already have a Postman collection? Convert it with
+`sankh import postman collection.json -o my-api` (see
+[Import from Postman](import.md)).
 
 A collection is a plain folder of `.sh` files, each holding one `curl` command:
 
@@ -111,4 +94,7 @@ raw-mode file calls curl several times, the last response is checked.
 
 - [Running in CI](ci.md): flags, reports and exit codes.
 - [Web UI](serve.md): editing and running requests in the browser.
+- [Desktop app](desktop.md): the same UI in a native window.
+- [Workspaces](workspaces.md): several collections side by side, and Scratch.
+- [Import from Postman](import.md): convert an existing collection.
 - [Trust and secrets](trust-secrets.md): what Sankh will run and what it hides.

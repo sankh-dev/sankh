@@ -26,6 +26,21 @@ export const docPages: DocPage[] = [
 		description: 'sankh serve, its security model, and remote use.'
 	},
 	{
+		slug: 'desktop',
+		title: 'Desktop app',
+		description: 'Download, requirements, and how the desktop app runs requests.'
+	},
+	{
+		slug: 'workspaces',
+		title: 'Workspaces',
+		description: 'Several collections side by side, session workspaces, and Scratch.'
+	},
+	{
+		slug: 'import',
+		title: 'Import from Postman',
+		description: 'Convert a Postman collection and its environments into a Sankh folder.'
+	},
+	{
 		slug: 'trust-secrets',
 		title: 'Trust and secrets',
 		description: 'How Sankh decides what may run and what gets redacted.'

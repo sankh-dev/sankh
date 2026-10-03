@@ -32,12 +32,12 @@
 	<title>Sankh: plain-file API requests for CI and your browser</title>
 	<meta
 		name="description"
-		content="Sankh is a lightweight request manager. A collection is a git folder of curl scripts; one binary runs them in CI or serves a local web UI."
+		content="Sankh is a lightweight request manager. A collection is a git folder of curl scripts; one binary runs them in CI or serves a local web UI, and a desktop app opens the same UI in a native window."
 	/>
 	<meta property="og:title" content="Sankh: blow the conch, run your APIs" />
 	<meta
 		property="og:description"
-		content="API collections as plain .sh files. One binary runs them in CI or serves a local web UI."
+		content="API collections as plain .sh files. Run them in CI, in a local web UI, or in the desktop app."
 	/>
 	<meta property="og:url" content="https://sankh.dev/" />
 	<link rel="canonical" href="https://sankh.dev/" />
@@ -51,7 +51,7 @@
 			<p class="lede">
 				Sankh is a very lightweight request manager. A collection is a plain folder of <code>.sh</code>
 				files, each holding one <code>curl</code> command. One binary runs them in CI or serves a small
-				web UI.
+				web UI, and the desktop app opens the same UI in a native window.
 			</p>
 			<CopyCommand command={INSTALL} />
 			<div class="cta">
@@ -99,16 +99,8 @@
 
 <section class="section">
 	<div class="wrap">
-		<h2>One binary, two ways to run</h2>
+		<h2>Run it in CI, a browser, or a window</h2>
 		<div class="cards">
-			<article class="card">
-				<h3>Plain files in git</h3>
-				<p>
-					No proprietary export format. Requests are shell scripts you can diff, review, and
-					<code>grep</code>. Environments are <code>.env</code> files; secrets stay in a gitignored
-					<code>.env.local</code>.
-				</p>
-			</article>
 			<article class="card">
 				<h3>Built for CI</h3>
 				<p>
@@ -123,6 +115,14 @@
 					runs the requests, not the browser, so there are no CORS workarounds.
 				</p>
 			</article>
+			<article class="card">
+				<h3>A desktop app</h3>
+				<p>
+					The same UI in a native window for macOS, Windows and Linux, with a native folder picker.
+					It edits the same files and runs requests on your machine.
+					<a href={resolve('/docs/[slug]', { slug: 'desktop' })}>Download</a>
+				</p>
+			</article>
 		</div>
 		<figure class="shot">
 			<img
@@ -134,6 +134,44 @@
 			/>
 			<figcaption><code>sankh serve examples/petstore</code></figcaption>
 		</figure>
+	</div>
+</section>
+
+<section class="section">
+	<div class="wrap">
+		<h2>All your collections, side by side</h2>
+		<p class="section-lede">
+			Plain files in git, no proprietary export format. Keep several collections open at once, each
+			with its own environments, captured values, and trust.
+		</p>
+		<div class="cards">
+			<article class="card">
+				<h3>Workspaces</h3>
+				<p>
+					<code>sankh workspace add</code> keeps folders in your workspace, so plain
+					<code>sankh serve</code> and the desktop app open them all. Removing one only unlinks it.
+				</p>
+			</article>
+			<article class="card">
+				<h3>Scratch</h3>
+				<p>
+					A built-in collection for trying requests without a folder. Paste a <code>curl</code> command,
+					run it, and <strong>Copy to</strong> a real collection when it is worth keeping.
+				</p>
+			</article>
+			<article class="card">
+				<h3>Import from Postman</h3>
+				<p>
+					<code>sankh import postman</code> turns a collection and its environments into
+					<code>.sh</code> files. Common test scripts become assertions; secrets never reach disk.
+				</p>
+			</article>
+		</div>
+		<p class="more">
+			<a href={resolve('/docs/[slug]', { slug: 'workspaces' })}>Workspaces and Scratch</a>
+			<span class="dim">·</span>
+			<a href={resolve('/docs/[slug]', { slug: 'import' })}>Importing from Postman</a>
+		</p>
 	</div>
 </section>
 
@@ -210,6 +248,17 @@
 					</li>
 				{/each}
 			</ul>
+			<div class="desktop">
+				<div>
+					<div class="caption">Desktop app</div>
+					<p>
+						Installers for macOS (<code>.dmg</code>), Windows (<code>.exe</code>, <code>.msi</code>) and
+						Linux (<code>.AppImage</code>, <code>.deb</code>). Not code signed yet; see the
+						<a href={resolve('/docs/[slug]', { slug: 'desktop' })}>desktop docs</a> for first launch.
+					</p>
+				</div>
+				<a class="btn" href="{GITHUB_URL}/releases/latest" rel="external">Download</a>
+			</div>
 		</div>
 		<div class="stack">
 			<div class="caption">Then</div>
@@ -438,6 +487,28 @@
 		margin-bottom: 8px;
 	}
 
+	.desktop {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 24px;
+		margin-top: 24px;
+		padding: 18px 22px;
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+	}
+
+	.desktop p {
+		margin: 8px 0 0;
+		color: var(--muted);
+		font-size: 15px;
+	}
+
+	.desktop .btn {
+		flex: none;
+	}
+
 	@media (max-width: 860px) {
 		.hero-grid,
 		.split,
@@ -503,6 +574,15 @@
 
 		.exit {
 			width: 100%;
+		}
+
+		.desktop {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.desktop .btn {
+			justify-content: center;
 		}
 
 		.exit th,
