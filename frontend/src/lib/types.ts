@@ -182,3 +182,11 @@ export interface EnvVar {
 	value: string;
 	source: 'file' | 'capture';
 }
+
+/** A variable of one env file as written: `${VAR}` expands, `\$` is literal. */
+export interface EnvFileVar {
+	name: string;
+	value: string;
+	/** The name looks secret; the UI masks the value by default. */
+	secret?: boolean;
+}

@@ -65,7 +65,18 @@ Secret values and literal credentials are never written to disk. Their names
 go into `.env.example`; set the values in `.env.local`, which the generated
 `.gitignore` excludes.
 
+Variables that requests use but neither the collection nor an imported
+environment defines are listed the same way, so nothing goes missing silently
+when you import without environment files.
+
+Import also creates `.env.local` with a sample value for each of these
+variables, guessed from its name: `http://localhost:8080` for `*_URL` and
+`*_HOST`, `1` for `*_ID`, `user@example.com` for `*_EMAIL`, and `changeme` for
+tokens, keys, passwords and anything else. Replace them before real use, in the
+file or from **Manage environments** in the UI.
+
 ## Safety
 
-Import never writes into a non-empty folder unless you pass `--force`. Use
+Import never writes into a non-empty folder unless you pass `--force`. An
+existing `.env.local` is never overwritten, even with `--force`. Use
 `--json` to get the import report in machine-readable form.

@@ -1,6 +1,7 @@
 import type {
 	CollectionInfo,
 	DirListing,
+	EnvFileVar,
 	EnvVar,
 	Info,
 	PostmanImported,
@@ -99,6 +100,20 @@ export const api = {
 	envs: (cid: string) => call<{ envs: string[]; default: string | null }>('GET', `${c(cid)}/envs`),
 	envVars: (cid: string, name: string) =>
 		call<{ vars: EnvVar[] }>('GET', `${c(cid)}/envs/${encodeURIComponent(name || '_')}`),
+	createEnv: (cid: string, name: string, copyFrom?: string) =>
+		call<{ name: string }>('POST', `${c(cid)}/envs`, { name, copy_from: copyFrom || undefined }),
+	renameEnv: (cid: string, name: string, to: string) =>
+		call<{ name: string }>('PATCH', `${c(cid)}/envs/${encodeURIComponent(name)}`, { name: to }),
+	deleteEnv: (cid: string, name: string) => call<unknown>('DELETE', `${c(cid)}/envs/${encodeURIComponent(name)}`),
+	setDefaultEnv: (cid: string, name: string | null) =>
+		call<{ default: string | null }>('PUT', `${c(cid)}/default-env`, { name }),
+	envFile: (cid: string, name: string) =>
+		call<{ vars: EnvFileVar[] }>('GET', `${c(cid)}/envs/${encodeURIComponent(name)}/file`),
+	saveEnvFile: (cid: string, name: string, vars: EnvFileVar[]) =>
+		call<{ vars: EnvFileVar[] }>('PUT', `${c(cid)}/envs/${encodeURIComponent(name)}/file`, { vars }),
+	envLocal: (cid: string) => call<{ vars: EnvFileVar[] }>('GET', `${c(cid)}/env-local`),
+	saveEnvLocal: (cid: string, vars: EnvFileVar[]) =>
+		call<{ vars: EnvFileVar[] }>('PUT', `${c(cid)}/env-local`, { vars }),
 	clearCaptures: (cid: string, env: string) =>
 		call<unknown>('DELETE', `${c(cid)}/captures?env=${encodeURIComponent(env || '_')}`),
 	trust: (cid: string) => call<TrustStatus>('POST', `${c(cid)}/trust`),

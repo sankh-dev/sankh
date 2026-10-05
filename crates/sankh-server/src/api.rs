@@ -10,10 +10,10 @@ use axum::response::sse::{KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use sankh_core::Collection;
 use sankh_core::collection::{CONFIG_FILE, CollectionError, ENV_DIR};
-use sankh_core::env::{self, Env};
+use sankh_core::env::{self, Env, EnvEditError};
 use sankh_core::format::{self, RequestForm};
 use sankh_core::import::{self, ImportError};
-use sankh_core::redact::Redactor;
+use sankh_core::redact::{Redactor, is_secret_name};
 use sankh_core::report::Summary;
 use sankh_core::select::{self, Filters};
 use sankh_core::trust::{self, TrustStore};
@@ -393,15 +393,14 @@ pub async fn import_postman(
     let envs: Vec<&str> = body.envs.iter().map(String::as_str).collect();
     let imported =
         import::postman::read(&body.collection, &envs).map_err(|e| bad(e.to_string()))?;
-    let rendered = import::render(&imported);
+    let mut rendered = import::render(&imported);
     let dir = match body.dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => expand_home(d),
         None => default_import_dir(&import::slug(&imported.name)),
     };
     let nonempty = dir_nonempty(&dir);
-    let files: Vec<&str> = rendered.files.iter().map(|(p, _)| p.as_str()).collect();
-
     if !body.write {
+        let files: Vec<&str> = rendered.files.iter().map(|(p, _)| p.as_str()).collect();
         return Ok(Json(json!({
             "dir": dir.display().to_string(),
             "nonempty": nonempty,
@@ -421,7 +420,7 @@ pub async fn import_postman(
         ));
     }
     check_import_target(&state, &dir)?;
-    import::write(&rendered, &dir, body.force).map_err(|e| match e {
+    import::write(&mut rendered, &dir, body.force).map_err(|e| match e {
         ImportError::NotEmpty(_) => ApiError(StatusCode::CONFLICT, e.to_string(), None),
         ImportError::Invalid(m) => bad(m),
         ImportError::Io(e) => e.into(),
@@ -525,6 +524,163 @@ pub async fn env_vars(
         }
     }
     Ok(Json(json!({ "vars": vars })))
+}
+
+impl From<EnvEditError> for ApiError {
+    fn from(e: EnvEditError) -> Self {
+        let status = match &e {
+            EnvEditError::Exists(_) => StatusCode::CONFLICT,
+            EnvEditError::Missing(_) => StatusCode::NOT_FOUND,
+            EnvEditError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::BAD_REQUEST,
+        };
+        ApiError(status, e.to_string(), None)
+    }
+}
+
+/// Picks up `sankh.toml` changes and tells open views the collection changed.
+fn env_changed(state: &AppState, cid: &str) {
+    state.registry.write().unwrap().reload(cid);
+    let _ = state.changes.send(cid.to_string());
+}
+
+fn file_vars_json(path: &std::path::Path) -> ApiResult {
+    let vars: Vec<Value> = env::read_env_raw(path)?
+        .into_iter()
+        .map(|(k, v)| json!({ "secret": is_secret_name(&k), "name": k, "value": v }))
+        .collect();
+    Ok(Json(json!({ "vars": vars })))
+}
+
+#[derive(Deserialize)]
+pub struct EnvVarBody {
+    name: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+pub struct EnvFileBody {
+    vars: Vec<EnvVarBody>,
+}
+
+impl EnvFileBody {
+    fn pairs(self) -> Vec<(String, String)> {
+        self.vars.into_iter().map(|v| (v.name, v.value)).collect()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreateEnvBody {
+    name: String,
+    #[serde(default)]
+    copy_from: Option<String>,
+}
+
+pub async fn create_env(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<CreateEnvBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    env::create_env(&c, body.name.trim(), body.copy_from.as_deref())?;
+    env_changed(&state, &cid);
+    Ok(Json(json!({ "name": body.name.trim() })))
+}
+
+#[derive(Deserialize)]
+pub struct RenameEnvBody {
+    name: String,
+}
+
+pub async fn rename_env(
+    State(state): State<Arc<AppState>>,
+    Path((cid, name)): Path<(String, String)>,
+    Json(body): Json<RenameEnvBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let to = body.name.trim();
+    env::rename_env(&c, &name, to)?;
+    let mut captures = state.captures.lock().unwrap();
+    if let Some(caps) = captures.remove(&(cid.clone(), name)) {
+        captures.insert((cid.clone(), to.to_string()), caps);
+    }
+    drop(captures);
+    env_changed(&state, &cid);
+    Ok(Json(json!({ "name": to })))
+}
+
+pub async fn delete_env(
+    State(state): State<Arc<AppState>>,
+    Path((cid, name)): Path<(String, String)>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    env::delete_env(&c, &name)?;
+    state
+        .captures
+        .lock()
+        .unwrap()
+        .remove(&(cid.clone(), name.clone()));
+    env_changed(&state, &cid);
+    Ok(Json(json!({ "deleted": name })))
+}
+
+#[derive(Deserialize)]
+pub struct DefaultEnvBody {
+    name: Option<String>,
+}
+
+pub async fn put_default_env(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<DefaultEnvBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let name = body.name.as_deref().filter(|n| !n.is_empty());
+    env::set_default_env(&c, name)?;
+    env_changed(&state, &cid);
+    Ok(Json(json!({ "default": name })))
+}
+
+/// Variables of one environment file as written, unmasked; `secret` marks
+/// names the UI should mask by default.
+pub async fn get_env_file(
+    State(state): State<Arc<AppState>>,
+    Path((cid, name)): Path<(String, String)>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    file_vars_json(&env::existing_env(&c, &name)?)
+}
+
+pub async fn put_env_file(
+    State(state): State<Arc<AppState>>,
+    Path((cid, name)): Path<(String, String)>,
+    Json(body): Json<EnvFileBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let path = env::existing_env(&c, &name)?;
+    env::write_env_file(&path, &body.pairs())?;
+    env_changed(&state, &cid);
+    file_vars_json(&path)
+}
+
+pub async fn get_env_local(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    file_vars_json(&c.root.join(env::ENV_LOCAL))
+}
+
+pub async fn put_env_local(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<EnvFileBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let path = c.root.join(env::ENV_LOCAL);
+    env::write_env_file(&path, &body.pairs())?;
+    env_changed(&state, &cid);
+    file_vars_json(&path)
 }
 
 #[derive(Deserialize)]

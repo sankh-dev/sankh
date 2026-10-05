@@ -103,18 +103,85 @@ fn secrets_are_never_written() {
 
 #[test]
 fn write_refuses_non_empty_folder() {
-    let out = import("petstore.postman_collection.json", &[]);
+    let mut out = import("petstore.postman_collection.json", &[]);
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("keep.txt"), "x").unwrap();
     assert!(matches!(
-        import::write(&out, dir.path(), false),
+        import::write(&mut out, dir.path(), false),
         Err(ImportError::NotEmpty(_))
     ));
-    import::write(&out, dir.path(), true).unwrap();
+    import::write(&mut out, dir.path(), true).unwrap();
     assert!(dir.path().join("02-pets/02-create-pet.sh").is_file());
     assert!(dir.path().join("keep.txt").is_file());
 
     let fresh = dir.path().join("new");
-    import::write(&out, &fresh, false).unwrap();
+    import::write(&mut out, &fresh, false).unwrap();
     assert!(fresh.join("sankh.toml").is_file());
+}
+
+const UNDEFINED: &str = r#"{
+  "info": {
+    "name": "Undefined",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [{
+    "name": "Get user",
+    "request": {
+      "method": "GET",
+      "url": "{{baseUrl}}/users/{{userId}}",
+      "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }]
+    }
+  }]
+}"#;
+
+fn file<'a>(out: &'a ImportOutput, path: &str) -> &'a str {
+    out.files
+        .iter()
+        .find(|(p, _)| p == path)
+        .map(|(_, c)| c.as_str())
+        .unwrap_or_else(|| panic!("{path} not rendered"))
+}
+
+#[test]
+fn undefined_variables_get_sample_values() {
+    let out = import::render(&postman::read(UNDEFINED, &[]).unwrap());
+    let names: Vec<&str> = out
+        .report
+        .placeholders
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    for expected in ["BASE_URL", "USER_ID", "TOKEN"] {
+        assert!(
+            names.contains(&expected),
+            "{expected} missing from {names:?}"
+        );
+    }
+    let example = file(&out, ".env.example");
+    assert!(example.contains("\nTOKEN=\n"), "{example}");
+    let local = file(&out, ".env.local");
+    assert!(
+        local.contains("\nBASE_URL=http://localhost:8080\n"),
+        "{local}"
+    );
+    assert!(local.contains("\nUSER_ID=1\n"), "{local}");
+    assert!(local.contains("\nTOKEN=changeme\n"), "{local}");
+}
+
+#[test]
+fn write_keeps_existing_env_local() {
+    let mut out = import::render(&postman::read(UNDEFINED, &[]).unwrap());
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".env.local"), "TOKEN=real\n").unwrap();
+    import::write(&mut out, dir.path(), true).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".env.local")).unwrap(),
+        "TOKEN=real\n"
+    );
+    assert!(
+        out.report
+            .warnings
+            .iter()
+            .any(|w| w.path == ".env.local" && w.message.contains("kept"))
+    );
 }

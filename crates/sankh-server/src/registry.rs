@@ -88,6 +88,21 @@ impl Registry {
             .collect()
     }
 
+    /// Re-reads a collection's `sankh.toml` after it was edited.
+    pub fn reload(&mut self, id: &str) {
+        let Some(slot) = self.slots.iter_mut().find(|s| s.id == id) else {
+            return;
+        };
+        if let Some(fresh) = slot
+            .collection
+            .as_ref()
+            .ok()
+            .and_then(|c| Collection::open(&c.root).ok())
+        {
+            slot.collection = Ok(fresh);
+        }
+    }
+
     /// Adds the collection containing `path`; returns its id.
     pub fn add(&mut self, path: &Path) -> Result<String, WorkspaceError> {
         let id = self.mutate(|ws| ws.add(path).map(|e| e.id))?;

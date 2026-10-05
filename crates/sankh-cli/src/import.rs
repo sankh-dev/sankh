@@ -45,11 +45,11 @@ fn postman_cmd(args: PostmanArgs) -> Result<()> {
     let env_refs: Vec<&str> = envs.iter().map(String::as_str).collect();
     let collection = postman::read(&text, &env_refs)
         .with_context(|| format!("reading {}", args.file.display()))?;
-    let rendered = import::render(&collection);
+    let mut rendered = import::render(&collection);
     let dir = args
         .output
         .unwrap_or_else(|| PathBuf::from(import::slug(&collection.name)));
-    import::write(&rendered, &dir, args.force)?;
+    import::write(&mut rendered, &dir, args.force)?;
     if args.json {
         println!("{}", serde_json::to_string_pretty(&rendered.report)?);
     } else {

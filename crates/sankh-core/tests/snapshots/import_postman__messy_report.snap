@@ -37,6 +37,10 @@ placeholders:
     note: secret; its value was not written to environments/ (set it in .env.local or CI)
   - name: GUID
     note: "replaces the dynamic variable {{$guid}}; set a value before running"
+  - name: TERM
+    note: referenced by requests but not defined in the collection or any imported environment
+  - name: USER_ID
+    note: referenced by requests but not defined in the collection or any imported environment
 warnings:
   - path: ""
     message: collection-level prerequest script (1 lines) is not imported; Sankh has no shared scripts

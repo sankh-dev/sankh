@@ -14,7 +14,7 @@ mod watch;
 use anyhow::{Result, bail};
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use sankh_core::env::Vars;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -115,8 +115,22 @@ pub fn app(state: Arc<AppState>) -> Router {
         )
         .route("/copy", post(api::copy_request))
         .route("/parse", post(api::parse))
-        .route("/envs", get(api::envs))
-        .route("/envs/{name}", get(api::env_vars))
+        .route("/envs", get(api::envs).post(api::create_env))
+        .route(
+            "/envs/{name}",
+            get(api::env_vars)
+                .patch(api::rename_env)
+                .delete(api::delete_env),
+        )
+        .route(
+            "/envs/{name}/file",
+            get(api::get_env_file).put(api::put_env_file),
+        )
+        .route(
+            "/env-local",
+            get(api::get_env_local).put(api::put_env_local),
+        )
+        .route("/default-env", put(api::put_default_env))
         .route("/captures", delete(api::clear_captures))
         .route("/trust", get(api::get_trust).post(api::post_trust))
         .route("/run", post(api::start_run));

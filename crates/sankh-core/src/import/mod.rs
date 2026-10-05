@@ -164,6 +164,11 @@ impl VarMap {
         name
     }
 
+    /// Every renamed variable seen in templates or definitions, sorted.
+    pub fn all_names(&self) -> BTreeSet<String> {
+        self.names.values().cloned().collect()
+    }
+
     /// Source names that were changed, sorted by source name.
     pub fn renames(&self) -> Vec<Rename> {
         self.names

@@ -9,6 +9,7 @@
 	import AddFolderDialog from './lib/AddFolderDialog.svelte';
 	import ImportPostmanDialog from './lib/ImportPostmanDialog.svelte';
 	import CopyDialog from './lib/CopyDialog.svelte';
+	import EnvManager, { type EnvChange } from './lib/EnvManager.svelte';
 	import { ApiError, api, run, setToken, streamEvents } from './lib/api';
 	import type { CollectionInfo, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
 
@@ -34,6 +35,7 @@
 	let adding = $state(false);
 	let importing = $state(false);
 	let copying = $state(false);
+	let managingEnvs = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let needToken = $state(false);
 	let tokenInput = $state('');
@@ -80,13 +82,29 @@
 
 	async function loadCollection(c: CollectionInfo) {
 		try {
-			const [t, e] = await Promise.all([api.tree(c.id), api.envs(c.id)]);
-			trees = { ...trees, [c.id]: t };
-			envLists = { ...envLists, [c.id]: e.envs };
-			const saved = localStorage.getItem(ENV_KEY(c.id));
-			envs[c.id] =
-				saved !== null && (saved === '' || e.envs.includes(saved)) ? saved : (e.default ?? e.envs[0] ?? '');
-			await loadVars(c.id);
+			trees = { ...trees, [c.id]: await api.tree(c.id) };
+			await refreshEnvs(c.id);
+		} catch (e) {
+			fail(e);
+		}
+	}
+
+	/** Re-reads the environment list, keeping the selection while it still exists. */
+	async function refreshEnvs(cid: string) {
+		const e = await api.envs(cid);
+		envLists = { ...envLists, [cid]: e.envs };
+		const saved = localStorage.getItem(ENV_KEY(cid));
+		envs[cid] =
+			saved !== null && (saved === '' || e.envs.includes(saved)) ? saved : (e.default ?? e.envs[0] ?? '');
+		await loadVars(cid);
+	}
+
+	async function envsChanged(cid: string, change: EnvChange) {
+		if (change?.type === 'renamed' && envs[cid] === change.from) localStorage.setItem(ENV_KEY(cid), change.to);
+		if (change?.type === 'deleted' && envs[cid] === change.name) localStorage.removeItem(ENV_KEY(cid));
+		try {
+			info = await api.info();
+			await refreshEnvs(cid);
 		} catch (e) {
 			fail(e);
 		}
@@ -250,6 +268,7 @@
 				docRef = null;
 			}
 			if (runState?.collection === cid) runState = null;
+			if (managingEnvs === cid) managingEnvs = null;
 		} catch (e) {
 			fail(e);
 		}
@@ -277,8 +296,10 @@
 		const controller = new AbortController();
 		const onChange = (ev: { changed?: string | null } | string) => {
 			const cid = typeof ev === 'object' ? ev.changed : null;
-			if (cid) refreshTree(cid);
-			else for (const c of collections) refreshTree(c.id);
+			if (cid) {
+				refreshTree(cid);
+				if (byId[cid] && !byId[cid].missing) refreshEnvs(cid).catch(() => {});
+			} else for (const c of collections) refreshTree(c.id);
 		};
 		const watch = async () => {
 			while (!controller.signal.aborted) {
@@ -348,6 +369,7 @@
 					onrun={(p) => runPath(col.id, p)}
 					onnew={(f) => (newIn = { cid: col.id, path: f })}
 					onenv={(e) => changeEnv(col.id, e)}
+					onmanageenvs={() => (managingEnvs = col.id)}
 					onunlink={() => unlink(col.id)}
 				/>
 			{/each}
@@ -416,6 +438,17 @@
 
 {#if importing}
 	<ImportPostmanDialog saved={info?.saved ?? true} onimported={imported} onclose={() => (importing = false)} />
+{/if}
+
+{#if managingEnvs !== null}
+	{@const cid = managingEnvs}
+	<EnvManager
+		{cid}
+		collection={byId[cid]?.name ?? cid}
+		current={envs[cid] ?? ''}
+		onchanged={(change) => envsChanged(cid, change)}
+		onclose={() => (managingEnvs = null)}
+	/>
 {/if}
 
 {#if copying && docRef}

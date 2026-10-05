@@ -149,6 +149,10 @@
 				{#if r.placeholders.length}
 					<details open>
 						<summary>Set these in <code>.env.local</code> (see <code>.env.example</code>)</summary>
+						<p class="muted">
+							<code>.env.local</code> is created with sample values guessed from each name (an existing one is kept).
+							Replace them before real use.
+						</p>
 						<ul>
 							{#each r.placeholders as p (p.name)}
 								<li><span class="mono">{p.name}</span> <span class="muted">{p.note}</span></li>

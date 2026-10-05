@@ -181,6 +181,92 @@ async fn blocks_path_traversal_in_every_collection() {
 }
 
 #[tokio::test]
+async fn manages_environments_and_env_local() {
+    let d = folder(&[
+        ("sankh.toml", "name = \"E\"\ndefault_env = \"dev\"\n"),
+        (
+            "environments/dev.env",
+            "# dev\nBASE_URL=http://x\nAPI=\"${BASE_URL}/v1\"\n",
+        ),
+    ]);
+    let (s, cid) = state(&d, None);
+    let c = |p: &str| format!("/api/c/{cid}{p}");
+
+    let (status, file) = call(&s, "GET", &c("/envs/dev/file"), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        file["vars"][1],
+        json!({ "name": "API", "value": "${BASE_URL}/v1", "secret": false })
+    );
+
+    let vars = json!({ "vars": [
+        { "name": "BASE_URL", "value": "http://y" },
+        { "name": "API", "value": "${BASE_URL}/v1" },
+        { "name": "API_TOKEN", "value": "t0ken" },
+    ]});
+    let (status, file) = call(&s, "PUT", &c("/envs/dev/file"), &[], Some(vars)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(file["vars"][2]["secret"], true);
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("environments/dev.env")).unwrap(),
+        "# dev\nBASE_URL=http://y\nAPI=\"${BASE_URL}/v1\"\nAPI_TOKEN=t0ken\n"
+    );
+    let bad = json!({ "vars": [{ "name": "1BAD", "value": "" }] });
+    let (status, _) = call(&s, "PUT", &c("/envs/dev/file"), &[], Some(bad)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let body = json!({ "name": "staging", "copy_from": "dev" });
+    let (status, _) = call(&s, "POST", &c("/envs"), &[], Some(body.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&s, "POST", &c("/envs"), &[], Some(body)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, _) = call(
+        &s,
+        "PATCH",
+        &c("/envs/dev"),
+        &[],
+        Some(json!({ "name": "local" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, envs) = call(&s, "GET", &c("/envs"), &[], None).await;
+    assert_eq!(
+        envs,
+        json!({ "envs": ["local", "staging"], "default": "local" })
+    );
+
+    let (status, _) = call(
+        &s,
+        "PUT",
+        &c("/default-env"),
+        &[],
+        Some(json!({ "name": "staging" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&s, "DELETE", &c("/envs/staging"), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, envs) = call(&s, "GET", &c("/envs"), &[], None).await;
+    assert_eq!(envs, json!({ "envs": ["local"], "default": null }));
+
+    for name in ["..%2Fsankh", "..", "Bad"] {
+        let (status, _) = call(&s, "DELETE", &c(&format!("/envs/{name}")), &[], None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{name}");
+    }
+
+    let (_, local) = call(&s, "GET", &c("/env-local"), &[], None).await;
+    assert_eq!(local, json!({ "vars": [] }));
+    let vars = json!({ "vars": [{ "name": "TOKEN", "value": "real" }] });
+    let (status, _) = call(&s, "PUT", &c("/env-local"), &[], Some(vars)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".env.local")).unwrap(),
+        "TOKEN=real\n"
+    );
+}
+
+#[tokio::test]
 async fn reads_writes_and_renders_requests() {
     let dir = folder(&[(
         "users/01-list.sh",

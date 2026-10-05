@@ -17,6 +17,7 @@
 		onrun: (path: string) => void;
 		onnew: (folder: string) => void;
 		onenv: (env: string) => void;
+		onmanageenvs: () => void;
 		onunlink: () => void;
 	}
 
@@ -33,6 +34,7 @@
 		onrun,
 		onnew,
 		onenv,
+		onmanageenvs,
 		onunlink
 	}: Props = $props();
 
@@ -85,6 +87,9 @@
 					<option value={e}>{e}</option>
 				{/each}
 			</select>
+			<button class="manage" title="Manage environments and .env.local for {col.name}" onclick={onmanageenvs}>
+				Manage
+			</button>
 		</div>
 		{#each children as child (child.path)}
 			<Tree node={child} {selected} {running} {outcomes} depth={1} {onselect} {onrun} {onnew} />
@@ -167,12 +172,19 @@
 		background: none;
 	}
 	.env {
+		display: flex;
+		gap: 4px;
 		padding: 0 10px 4px 22px;
 	}
 	.env select {
-		width: 100%;
+		flex: 1;
+		min-width: 0;
 		padding: 2px 6px;
 		font-size: 12px;
+	}
+	.manage {
+		padding: 2px 6px;
+		font-size: 11px;
 	}
 	.empty {
 		margin: 2px 0 4px;
