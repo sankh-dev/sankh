@@ -12,7 +12,8 @@ session. Prefer a native window? The [desktop app](desktop.md) is the same UI.
 
 The UI has a file tree for each collection, form and raw (CodeMirror)
 editors, an environment picker per collection, live results for single
-requests and whole folders, and import from curl. **Add folder** puts another
+requests and whole folders, and import from curl or from a Postman export
+(see [Import from Postman](import.md#from-the-app)). **Add folder** puts another
 collection next to the others; **Copy to...** copies a request between
 collections. The server, not the browser, executes the requests, so there are
 no CORS workarounds and the results match `sankh run` exactly.

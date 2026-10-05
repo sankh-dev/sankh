@@ -92,3 +92,72 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$TAG" out/* --clobber
+
+  # Publishes the macOS app as a cask in the same tap as the CLI formula:
+  # brew install --cask sankh-dev/tap/sankh-desktop
+  publish-cask:
+    needs: build
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_FROM_API: 1
+    steps:
+      - name: Skip prereleases
+        id: release
+        run: |
+          pre=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        if: steps.release.outputs.prerelease == 'false'
+        with:
+          ref: ${{ env.TAG }}
+          path: src
+      - uses: actions/checkout@v7
+        if: steps.release.outputs.prerelease == 'false'
+        with:
+          repository: sankh-dev/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: true
+          path: tap
+      - name: Render cask
+        if: steps.release.outputs.prerelease == 'false'
+        run: |
+          version="${TAG#v}"
+          mkdir -p sums
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir sums \
+            --pattern "Sankh_${version}_aarch64.dmg.sha256" \
+            --pattern "Sankh_${version}_x64.dmg.sha256"
+          arm=$(cut -d' ' -f1 "sums/Sankh_${version}_aarch64.dmg.sha256")
+          intel=$(cut -d' ' -f1 "sums/Sankh_${version}_x64.dmg.sha256")
+          for sum in "$arm" "$intel"; do
+            [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || { echo "bad checksum: $sum"; exit 1; }
+          done
+          mkdir -p tap/Casks
+          sed -e "s/__VERSION__/${version}/" \
+              -e "s/__SHA256_ARM__/${arm}/" \
+              -e "s/__SHA256_INTEL__/${intel}/" \
+              src/.github/homebrew/sankh-desktop.rb.tmpl > tap/Casks/sankh-desktop.rb
+          cat tap/Casks/sankh-desktop.rb
+      - name: Audit cask
+        if: steps.release.outputs.prerelease == 'false'
+        run: |
+          taps="$(brew --repository)/Library/Taps/sankh-dev"
+          mkdir -p "$taps"
+          rm -rf "$taps/homebrew-tap"
+          ln -s "$PWD/tap" "$taps/homebrew-tap"
+          brew style --cask sankh-dev/tap/sankh-desktop
+          brew audit --cask --online sankh-dev/tap/sankh-desktop
+      - name: Push cask
+        if: steps.release.outputs.prerelease == 'false'
+        working-directory: tap
+        run: |
+          git config user.name "sankh release bot"
+          git config user.email "release-bot@sankh.dev"
+          git add Casks/sankh-desktop.rb
+          if git diff --cached --quiet; then
+            echo "cask already up to date"
+            exit 0
+          fi
+          git commit -m "sankh-desktop ${TAG#v}"
+          git push

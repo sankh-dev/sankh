@@ -3,6 +3,9 @@ import type {
 	DirListing,
 	EnvVar,
 	Info,
+	PostmanImported,
+	PostmanImportRequest,
+	PostmanPreview,
 	RequestDoc,
 	RequestForm,
 	RunEvent,
@@ -79,6 +82,10 @@ export const api = {
 	render: (form: RequestForm) => call<{ content: string }>('POST', '/render', { form }),
 	importCurl: (curl: string, name: string) =>
 		call<{ content: string }>('POST', '/import', { curl, name }),
+	previewPostman: (body: PostmanImportRequest) =>
+		call<PostmanPreview>('POST', '/import/postman', { ...body, write: false }),
+	importPostman: (body: PostmanImportRequest) =>
+		call<PostmanImported>('POST', '/import/postman', { ...body, write: true }),
 
 	tree: (cid: string) => call<TreeNode>('GET', `${c(cid)}/tree`),
 	getRequest: (cid: string, path: string) => call<RequestDoc>('GET', `${c(cid)}/request/${enc(path)}`),

@@ -13,6 +13,7 @@ mod watch;
 
 use anyhow::{Result, bail};
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
 use sankh_core::env::Vars;
 use std::collections::HashMap;
@@ -22,6 +23,9 @@ use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 
 pub use registry::{Registry, Slot};
+
+/// Postman exports with many saved responses easily exceed axum's 2 MB default.
+const IMPORT_BODY_LIMIT: usize = 32 * 1024 * 1024;
 pub use security::is_loopback;
 
 /// Which collections to serve.
@@ -123,6 +127,10 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/fs/dirs", get(api::list_dirs))
         .route("/render", post(api::render))
         .route("/import", post(api::import))
+        .route(
+            "/import/postman",
+            post(api::import_postman).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
         .route("/runs/{id}/events", get(api::run_events))
         .route("/events", get(api::change_events))
         .nest("/c/{cid}", collection);

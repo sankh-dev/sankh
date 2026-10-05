@@ -33,7 +33,7 @@ sh pets/02-create.sh
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.1 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.3.0 sh
 ```
 
 Or build from source (needs Rust and Node 22):
@@ -118,7 +118,7 @@ one or more paths, it opens just those folders for this session.
 
 The UI has a file tree, form and raw (CodeMirror) editors, an environment
 picker, live results for single requests and whole folders, and import from
-curl. Values captured in the UI (e.g. a login token) are kept per environment
+curl or a Postman export (**Import Postman...**). Values captured in the UI (e.g. a login token) are kept per environment
 for the session, so you can run requests one at a time; **Clear captures**
 forgets them.
 
@@ -178,6 +178,10 @@ Common test-script statements (`pm.response.to.have.status(201)`,
 is kept as comments in the file and listed in the import report, because
 Sankh does not run JavaScript. Import never writes into a non-empty folder
 without `--force`.
+
+The web UI and desktop app can do the same from **Import Postman...**: pick
+the export, review the import report, choose a destination, and the new
+collection is added to the workspace.
 
 ## Collections
 

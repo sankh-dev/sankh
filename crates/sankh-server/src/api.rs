@@ -12,6 +12,7 @@ use sankh_core::Collection;
 use sankh_core::collection::{CONFIG_FILE, CollectionError, ENV_DIR};
 use sankh_core::env::{self, Env};
 use sankh_core::format::{self, RequestForm};
+use sankh_core::import::{self, ImportError};
 use sankh_core::redact::Redactor;
 use sankh_core::report::Summary;
 use sankh_core::select::{self, Filters};
@@ -363,6 +364,134 @@ pub async fn import(Json(body): Json<ImportBody>) -> ApiResult {
     let name = body.name.unwrap_or_else(|| "Imported request".into());
     let content = format::import_curl(&body.curl, &name).map_err(bad)?;
     Ok(Json(json!({ "content": content })))
+}
+
+#[derive(Deserialize)]
+pub struct PostmanBody {
+    /// Text of the exported collection.
+    collection: String,
+    /// Texts of exported Postman environments.
+    #[serde(default)]
+    envs: Vec<String>,
+    /// Output folder; defaults to a free `~/<collection-slug>` folder.
+    #[serde(default)]
+    dir: Option<String>,
+    #[serde(default)]
+    force: bool,
+    /// Write the files and add the folder; otherwise only preview.
+    #[serde(default)]
+    write: bool,
+}
+
+/// Converts a Postman export. Without `write` it returns the report and the
+/// files it would create; with `write` it writes them and adds the folder to
+/// the workspace.
+pub async fn import_postman(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PostmanBody>,
+) -> ApiResult {
+    let envs: Vec<&str> = body.envs.iter().map(String::as_str).collect();
+    let imported =
+        import::postman::read(&body.collection, &envs).map_err(|e| bad(e.to_string()))?;
+    let rendered = import::render(&imported);
+    let dir = match body.dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => expand_home(d),
+        None => default_import_dir(&import::slug(&imported.name)),
+    };
+    let nonempty = dir_nonempty(&dir);
+    let files: Vec<&str> = rendered.files.iter().map(|(p, _)| p.as_str()).collect();
+
+    if !body.write {
+        return Ok(Json(json!({
+            "dir": dir.display().to_string(),
+            "nonempty": nonempty,
+            "files": files,
+            "report": rendered.report,
+        })));
+    }
+
+    if nonempty && !body.force {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            format!(
+                "{} is not empty; choose another folder or allow overwriting",
+                dir.display()
+            ),
+            None,
+        ));
+    }
+    check_import_target(&state, &dir)?;
+    import::write(&rendered, &dir, body.force).map_err(|e| match e {
+        ImportError::NotEmpty(_) => ApiError(StatusCode::CONFLICT, e.to_string(), None),
+        ImportError::Invalid(m) => bad(m),
+        ImportError::Io(e) => e.into(),
+    })?;
+    let slot = {
+        let mut registry = state.registry.write().unwrap();
+        let id = registry.add(&dir)?;
+        slot_json(registry.slot(&id).unwrap())
+    };
+    state.sync_watch();
+    Ok(Json(json!({
+        "dir": dir.display().to_string(),
+        "collection": slot,
+        "report": rendered.report,
+    })))
+}
+
+fn dir_nonempty(dir: &std::path::Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some())
+}
+
+/// `~/<slug>`, or `~/<slug>-2`, `~/<slug>-3`, ... when that folder is in use.
+fn default_import_dir(slug: &str) -> std::path::PathBuf {
+    let base = dirs::home_dir().unwrap_or_else(|| ".".into());
+    let mut dir = base.join(slug);
+    let mut n = 2;
+    while dir_nonempty(&dir) {
+        dir = base.join(format!("{slug}-{n}"));
+        n += 1;
+    }
+    dir
+}
+
+/// Refuses an output folder inside or around an open collection before any
+/// file is written, since the workspace would reject it afterwards.
+fn check_import_target(state: &AppState, dir: &std::path::Path) -> Result<(), ApiError> {
+    let target = resolve(dir);
+    for (id, root) in state.registry.read().unwrap().roots() {
+        if target.starts_with(&root) || root.starts_with(&target) {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                format!(
+                    "{} overlaps `{id}` ({}); collections cannot be nested",
+                    dir.display(),
+                    root.display()
+                ),
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Canonical form of a path that may not exist yet: the deepest existing
+/// ancestor is canonicalized and the rest appended.
+fn resolve(path: &std::path::Path) -> std::path::PathBuf {
+    let mut existing = path.to_path_buf();
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        match (existing.file_name(), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                rest.push(name.to_os_string());
+                existing = parent.to_path_buf();
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+    let mut out = existing.canonicalize().unwrap_or(existing);
+    out.extend(rest.iter().rev());
+    out
 }
 
 pub async fn envs(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {

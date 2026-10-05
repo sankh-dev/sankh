@@ -7,7 +7,16 @@ the browser, and `sankh run` at any time.
 
 ## Download
 
-Get the installer for your platform from the
+On macOS, install with Homebrew:
+
+```bash
+brew install --cask sankh-dev/tap/sankh-desktop
+```
+
+The cask clears the quarantine flag on install, so the unsigned app opens
+without a Gatekeeper prompt. `brew upgrade` picks up new releases.
+
+Or get the installer for your platform from the
 [latest release](https://github.com/sankh-dev/sankh/releases/latest):
 
 | Platform | File |
@@ -21,8 +30,9 @@ Each file has a matching `.sha256` checksum next to it.
 
 The installers are not code signed yet:
 
-- **macOS:** right-click the app and choose **Open** the first time, or run
-  `xattr -dr com.apple.quarantine /Applications/Sankh.app`.
+- **macOS (DMG):** right-click the app and choose **Open** the first time, or run
+  `xattr -dr com.apple.quarantine /Applications/Sankh.app`. Not needed with
+  the Homebrew cask.
 - **Windows:** in the SmartScreen prompt choose **More info**, then
   **Run anyway**.
 - **Linux:** make the AppImage executable (`chmod +x Sankh_*.AppImage`). The
@@ -46,8 +56,9 @@ found as they are in a terminal.
 
 ## What is different from `sankh serve`
 
-- **Folder picker.** **Add folder** has a **Choose...** button that opens the
-  native folder dialog.
+- **Folder picker.** **Add folder** and **Import Postman...** (for the
+  destination of the new collection) have a **Choose...** button that opens
+  the native folder dialog. See [Import from Postman](import.md#from-the-app).
 - **One window.** Launching the app again focuses the window that is already
   open.
 - **No fixed port.** The app has no `--port`, `--listen` or `--token`

@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## [0.3.0] - 2026-10-05
+
+### Added
+
+- **Import from Postman in the UI.** **Import Postman...** in `sankh serve`
+  and the desktop app converts a Postman export (plus optional environments),
+  shows the import report before writing, writes the new folder and adds it
+  to the workspace. The desktop app picks the destination with the native
+  folder dialog. Backed by `POST /api/import/postman`.
+- **Homebrew cask for the desktop app**:
+  `brew install --cask sankh-dev/tap/sankh-desktop`. The release workflow
+  publishes it to the existing tap next to the CLI formula.
 
 ### Docs
 

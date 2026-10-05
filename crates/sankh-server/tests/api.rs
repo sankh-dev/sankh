@@ -416,6 +416,91 @@ async fn scratch_is_built_in_trusted_and_cannot_be_unlinked() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+fn postman_fixture(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../sankh-core/tests/fixtures/postman")
+        .join(name);
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[tokio::test]
+async fn imports_postman_with_preview_then_write() {
+    let existing = folder(&[("a.sh", "curl x\n")]);
+    let (s, _) = state(&existing, None);
+    let out = tempfile::tempdir().unwrap();
+    let dir = out.path().join("petstore");
+    let body = json!({
+        "collection": postman_fixture("petstore.postman_collection.json"),
+        "envs": [postman_fixture("petstore.postman_environment.json")],
+        "dir": dir.display().to_string(),
+    });
+
+    let (status, preview) = call(&s, "POST", "/api/import/postman", &[], Some(body.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["nonempty"], false);
+    assert!(preview["report"]["requests"].as_u64().unwrap() > 0);
+    let files = preview["files"].as_array().unwrap();
+    assert!(files.iter().any(|f| f == "sankh.toml"));
+    assert!(!dir.exists(), "preview must not write");
+
+    let mut write = body.clone();
+    write["write"] = json!(true);
+    let (status, done) = call(&s, "POST", "/api/import/postman", &[], Some(write.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    assert!(dir.join("sankh.toml").is_file());
+    let cid = done["collection"]["id"].as_str().unwrap().to_string();
+    let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+    assert!(
+        info["collections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == cid)
+    );
+    let (status, _) = call(&s, "GET", &format!("/api/c/{cid}/tree"), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, again) = call(&s, "POST", "/api/import/postman", &[], Some(body)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(again["nonempty"], true);
+    let (status, err) = call(&s, "POST", "/api/import/postman", &[], Some(write)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(err["error"].as_str().unwrap().contains("not empty"));
+}
+
+#[tokio::test]
+async fn postman_import_refuses_nested_targets_and_bad_input() {
+    let existing = folder(&[("sankh.toml", ""), ("a.sh", "curl x\n")]);
+    let (s, _) = state(&existing, None);
+    let inside = existing.path().join("nested");
+    let (status, err) = call(
+        &s,
+        "POST",
+        "/api/import/postman",
+        &[],
+        Some(json!({
+            "collection": postman_fixture("petstore.postman_collection.json"),
+            "dir": inside.display().to_string(),
+            "write": true,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(err["error"].as_str().unwrap().contains("nested"));
+    assert!(!inside.exists(), "nothing is written for a rejected target");
+
+    let (status, err) = call(
+        &s,
+        "POST",
+        "/api/import/postman",
+        &[],
+        Some(json!({ "collection": "{\"values\": []}" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"].as_str().unwrap().contains("environment"));
+}
+
 #[test]
 fn remote_listen_requires_token() {
     isolate_config();

@@ -42,6 +42,39 @@ export interface DirListing {
 	dirs: { name: string; path: string; collection: boolean }[];
 }
 
+export interface ImportReport {
+	collection: string;
+	requests: number;
+	folders: number;
+	environments: string[];
+	renamed: { from: string; to: string }[];
+	placeholders: { name: string; note: string }[];
+	/** `path` is the generated file or folder; `""` for the collection. */
+	warnings: { path: string; message: string }[];
+}
+
+export interface PostmanImportRequest {
+	collection: string;
+	envs: string[];
+	dir?: string;
+	force?: boolean;
+	write?: boolean;
+}
+
+export interface PostmanPreview {
+	dir: string;
+	/** The output folder exists and has files in it. */
+	nonempty: boolean;
+	files: string[];
+	report: ImportReport;
+}
+
+export interface PostmanImported {
+	dir: string;
+	collection: CollectionInfo;
+	report: ImportReport;
+}
+
 export interface Header {
 	name: string;
 	value: string;

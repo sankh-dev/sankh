@@ -7,6 +7,7 @@
 	import RunPanel from './lib/RunPanel.svelte';
 	import NewRequestDialog from './lib/NewRequestDialog.svelte';
 	import AddFolderDialog from './lib/AddFolderDialog.svelte';
+	import ImportPostmanDialog from './lib/ImportPostmanDialog.svelte';
 	import CopyDialog from './lib/CopyDialog.svelte';
 	import { ApiError, api, run, setToken, streamEvents } from './lib/api';
 	import type { CollectionInfo, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
@@ -31,6 +32,7 @@
 	let running = $state.raw<Ref | null>(null);
 	let newIn = $state.raw<Ref | null>(null);
 	let adding = $state(false);
+	let importing = $state(false);
 	let copying = $state(false);
 	let error = $state<string | null>(null);
 	let needToken = $state(false);
@@ -222,6 +224,15 @@
 		await loadCollection(col);
 	}
 
+	async function imported(col: CollectionInfo) {
+		importing = false;
+		info = await api.info();
+		await loadCollection(col);
+		selected = { cid: col.id, path: '' };
+		doc = null;
+		docRef = null;
+	}
+
 	async function unlink(cid: string) {
 		const col = byId[cid];
 		if (!col || !confirm(`Unlink "${col.name}" from the workspace?\n\nIts files stay on disk at ${col.root}.`)) return;
@@ -308,6 +319,7 @@
 			New request
 		</button>
 		<button onclick={() => (adding = true)}>Add folder</button>
+		<button onclick={() => (importing = true)}>Import Postman...</button>
 	</header>
 
 	{#if active && active.trust && !active.missing}
@@ -343,6 +355,7 @@
 				<p class="hint">Add a folder, or try requests in Scratch.</p>
 			{/if}
 			<button class="add" onclick={() => (adding = true)}>+ Add folder</button>
+			<button class="add" onclick={() => (importing = true)}>+ Import from Postman</button>
 			{#if info && !info.saved}
 				<p class="hint">Session only: changes to this list are not saved.</p>
 			{/if}
@@ -399,6 +412,10 @@
 
 {#if adding}
 	<AddFolderDialog saved={info?.saved ?? true} onadd={addFolder} onclose={() => (adding = false)} />
+{/if}
+
+{#if importing}
+	<ImportPostmanDialog saved={info?.saved ?? true} onimported={imported} onclose={() => (importing = false)} />
 {/if}
 
 {#if copying && docRef}

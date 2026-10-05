@@ -16,6 +16,27 @@ sankh trust my-api
 sankh run my-api --env dev
 ```
 
+## From the app
+
+The [web UI](serve.md) and the [desktop app](desktop.md) do the same
+conversion without a terminal:
+
+1. Choose **Import Postman...** in the header (or **+ Import from Postman**
+   under the collection list).
+2. Pick the exported collection and, optionally, one or more environment
+   exports. Sankh shows the import report before writing anything: request
+   and folder counts, renamed variables, the values to set in `.env.local`,
+   and warnings for each file.
+3. Check the destination folder. It defaults to a new folder named after the
+   collection in your home folder; the desktop app also has a **Choose...**
+   button. If the folder is not empty, tick the overwrite box to write into
+   it anyway.
+4. Choose **Import**. The new collection is added to the workspace and
+   selected. Review the files, then trust it to run requests.
+
+The destination cannot be inside, or contain, a collection that is already
+open.
+
 ## What gets converted
 
 | Postman | Sankh |

@@ -4,7 +4,7 @@
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.2.1 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.3.0 sh
 ```
 
 The installer downloads the release archive for your platform from GitHub,
@@ -15,6 +15,7 @@ Other options:
 
 ```bash
 brew install sankh-dev/tap/sankh
+brew install --cask sankh-dev/tap/sankh-desktop   # desktop app (macOS)
 ```
 
 ```powershell
