@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0] - 2026-10-05
+
+### Added
+
+- **Manage environments in the UI.** A **Manage** button next to each
+  collection's environment picker opens an editor for `environments/*.env`
+  and `.env.local`: add, edit and remove variables (secret-looking values are
+  masked until revealed), and create, copy, rename, delete or set the default
+  environment. Saving keeps comments and `${VAR}` references as written.
+- **Postman import creates `.env.local`.** Variables that requests use but
+  neither the collection nor an imported environment defines are now listed
+  in `.env.example` and the import report. Import also writes `.env.local`
+  with sample values guessed from each name (`http://localhost:8080` for
+  URLs, `1` for ids, `changeme` for tokens and the rest). An existing
+  `.env.local` is never overwritten, even with `--force`.
+
 ## [0.3.0] - 2026-10-05
 
 ### Added

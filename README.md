@@ -33,7 +33,7 @@ sh pets/02-create.sh
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.3.0 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.4.0 sh
 ```
 
 Or build from source (needs Rust and Node 22):
@@ -120,7 +120,8 @@ The UI has a file tree, form and raw (CodeMirror) editors, an environment
 picker, live results for single requests and whole folders, and import from
 curl or a Postman export (**Import Postman...**). Values captured in the UI (e.g. a login token) are kept per environment
 for the session, so you can run requests one at a time; **Clear captures**
-forgets them.
+forgets them. **Manage** next to the environment picker edits
+`environments/*.env` and `.env.local` (create, rename, delete, set default).
 
 Security:
 
@@ -170,7 +171,9 @@ become directories, requests become numbered `.sh` files, and collection and
 environment variables become `environments/*.env` (`{{baseUrl}}` becomes
 `${BASE_URL}`). Auth becomes explicit headers or `-u`. Secret values and
 literal credentials are never written to disk; they are listed in
-`.env.example` for you to set in `.env.local`.
+`.env.example`, together with variables that requests use but nothing
+defines, and `.env.local` is created with sample values for you to replace
+(an existing one is kept).
 
 Common test-script statements (`pm.response.to.have.status(201)`,
 `pm.environment.set("token", pm.response.json().token)`, simple

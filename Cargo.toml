@@ -11,7 +11,7 @@ members = [
 default-members = ["crates/sankh-core", "crates/sankh-server", "crates/sankh-cli"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sankh-dev/sankh"
@@ -19,8 +19,8 @@ homepage = "https://sankh.dev"
 rust-version = "1.85"
 
 [workspace.dependencies]
-sankh-core = { path = "crates/sankh-core", version = "0.3.0" }
-sankh-server = { path = "crates/sankh-server", version = "0.3.0" }
+sankh-core = { path = "crates/sankh-core", version = "0.4.0" }
+sankh-server = { path = "crates/sankh-server", version = "0.4.0" }
 
 anyhow = "1"
 thiserror = "2"
