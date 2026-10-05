@@ -15,6 +15,10 @@ on:
       tag:
         description: Existing release tag to attach installers to (e.g. v0.2.0)
         required: true
+      cask_only:
+        description: Skip the builds and only publish the Homebrew cask for installers already on the release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,7 +30,7 @@ env:
 jobs:
   build:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && !inputs.cask_only) ||
       (github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.conclusion == 'success')
     strategy:
@@ -97,6 +101,7 @@ jobs:
   # brew install --cask sankh-dev/tap/sankh-desktop
   publish-cask:
     needs: build
+    if: always() && (needs.build.result == 'success' || inputs.cask_only)
     runs-on: macos-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,10 +113,11 @@ jobs:
         run: |
           pre=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
           echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+      # The template comes from this workflow's commit, not the tag, so a cask
+      # fix can be published for an existing release with cask_only.
       - uses: actions/checkout@v7
         if: steps.release.outputs.prerelease == 'false'
         with:
-          ref: ${{ env.TAG }}
           path: src
       - uses: actions/checkout@v7
         if: steps.release.outputs.prerelease == 'false'

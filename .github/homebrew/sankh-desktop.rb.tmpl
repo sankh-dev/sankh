@@ -18,6 +18,8 @@ cask "sankh-desktop" do
     strategy :github_latest
   end
 
+  depends_on :macos
+
   app "Sankh.app"
 
   # The app is not code signed or notarized yet; without this Gatekeeper
