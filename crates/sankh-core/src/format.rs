@@ -16,6 +16,9 @@ pub struct RequestForm {
     pub description: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// `@timeout` argument, e.g. `10s`.
+    #[serde(default)]
+    pub timeout: Option<String>,
     /// e.g. `status 201`, `json .data.id exists`
     #[serde(default)]
     pub expects: Vec<String>,
@@ -36,6 +39,7 @@ impl RequestForm {
             name: req.name.clone(),
             description: req.description.clone(),
             tags: req.tags.clone(),
+            timeout: req.timeout_ms.map(parser::format_duration),
             expects: req.expects.iter().map(|e| e.to_string()).collect(),
             captures: req.captures.iter().map(|c| c.to_string()).collect(),
             extra_header_lines: req.extra_header_lines.clone(),
@@ -52,8 +56,14 @@ pub fn render(form: &RequestForm) -> String {
     if !form.name.trim().is_empty() {
         out.push_str(&format!("# @name {}\n", form.name.trim()));
     }
-    if let Some(d) = form.description.as_deref().filter(|d| !d.trim().is_empty()) {
-        out.push_str(&format!("# @description {}\n", d.trim()));
+    if let Some(d) = form.description.as_deref() {
+        for line in d.trim().lines().map(str::trim) {
+            if line.is_empty() {
+                out.push_str("# @description\n");
+            } else {
+                out.push_str(&format!("# @description {line}\n"));
+            }
+        }
     }
     let tags: Vec<&str> = form
         .tags
@@ -63,6 +73,9 @@ pub fn render(form: &RequestForm) -> String {
         .collect();
     if !tags.is_empty() {
         out.push_str(&format!("# @tags {}\n", tags.join(" ")));
+    }
+    if let Some(t) = form.timeout.as_deref().filter(|t| !t.trim().is_empty()) {
+        out.push_str(&format!("# @timeout {}\n", t.trim()));
     }
     for line in &form.extra_header_lines {
         out.push_str(line);
@@ -157,6 +170,25 @@ mod tests {
         assert_eq!(rendered, src);
         let again = parser::parse(&rendered, "x.sh");
         assert_eq!(again, req);
+    }
+
+    #[test]
+    fn round_trips_multiline_description_and_timeout() {
+        let src = "#!/usr/bin/env bash\n# @name Slow\n# @description First line.\n# @description\n# @description Second paragraph.\n# @tags smoke\n# @timeout 2m\ncurl -sS \"$BASE_URL/slow\"\n";
+        let req = parser::parse(src, "x.sh");
+        assert_eq!(req.timeout_ms, Some(120_000));
+        let form = RequestForm::from_request(&req).unwrap();
+        assert_eq!(
+            form.description.as_deref(),
+            Some("First line.\n\nSecond paragraph.")
+        );
+        assert_eq!(form.timeout.as_deref(), Some("2m"));
+        assert_eq!(render(&form), src);
+
+        let mut form = form;
+        form.description = Some("  a  \r\nb\n\n".into());
+        let rendered = render(&form);
+        assert!(rendered.contains("# @description a\n# @description b\n# @tags"));
     }
 
     #[test]

@@ -23,15 +23,18 @@ conversion without a terminal:
 
 1. Choose **Add collection > Import from Postman…** in the header.
 2. Pick the exported collection and, optionally, one or more environment
-   exports. Sankh shows the import report before writing anything: request
-   and folder counts, renamed variables, the values to set in `.env.local`,
-   and warnings for each file.
-3. Check the destination folder. It defaults to a new folder named after the
-   collection in your home folder; the desktop app also has a **Choose...**
-   button. If the folder is not empty, tick the overwrite box to write into
-   it anyway.
-4. Choose **Import**. The new collection is added to the workspace and
-   selected. Review the files, then trust it to run requests.
+   exports.
+3. Under **Where to create it**, choose the parent folder in **Save in**
+   (**Browse...** in the web UI, **Choose...** in the desktop app) and the
+   **Folder name**. It defaults to `~/sankh-collections/<collection-name>`
+   (created on the first import), and the dialog shows the full path it will
+   create. If that folder is not
+   empty, tick the overwrite box to write into it anyway.
+4. Review the import report: request and folder counts, renamed variables,
+   the values to set in `.env.local`, and warnings for each file. Nothing is
+   written yet.
+5. Choose **Import** (the button names the folder). The new collection is added to the workspace
+   and selected. Review the files, then trust it to run requests.
 
 The destination cannot be inside, or contain, a collection that is already
 open.

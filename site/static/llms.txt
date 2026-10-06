@@ -67,8 +67,9 @@ curl -sS -X POST "$BASE_URL/users" \
 | Annotation | Meaning |
 | --- | --- |
 | `@name <text>` | Display name |
-| `@description <text>` | Notes, no effect |
+| `@description <text>` | Notes, no effect; repeat the line for multi-line notes |
 | `@tags <tag>...` | Labels for `--tag` (lowercase, digits, `-`, `_`) |
+| `@timeout <duration>` | Per-request limit (`500ms`, `10s`, `2m`); overrides `timeout` in `sankh.toml` |
 | `@expect status <codes>` | `200`, `2xx`, or `200\|201\|204`. Default: any 2xx |
 | `@expect json <jq> <op> <value>` | Ops: `==` `!=` `>` `>=` `<` `<=` `contains` `matches "<regex>"` |
 | `@expect json <jq> exists` | Non-null result |

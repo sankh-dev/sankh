@@ -49,20 +49,46 @@
 		<label for="f-name">Name</label>
 		<input id="f-name" bind:value={form.name} />
 
-		<label for="f-desc">Description</label>
-		<input
+		<label for="f-desc" class="top">Description</label>
+		<textarea
 			id="f-desc"
+			class="desc"
+			rows="2"
 			value={form.description ?? ''}
+			placeholder="What this request does, what it needs"
 			oninput={(e) => (form.description = e.currentTarget.value || null)}
-		/>
+		></textarea>
 
-		<label for="f-tags">Tags</label>
-		<input
-			id="f-tags"
-			value={tagsText}
-			placeholder="smoke orders"
-			onchange={(e) => setTags(e.currentTarget.value)}
-		/>
+		<label for="f-tags" class="top">Tags</label>
+		<div class="field">
+			<input
+				id="f-tags"
+				value={tagsText}
+				placeholder="smoke orders"
+				aria-describedby="f-tags-hint"
+				onchange={(e) => setTags(e.currentTarget.value)}
+			/>
+			<p class="hint" id="f-tags-hint">
+				Space-separated labels for picking requests in CI, e.g. <code>sankh run --tag smoke</code>. Lowercase
+				letters, digits, <code>-</code> and <code>_</code>.
+			</p>
+		</div>
+
+		<label for="f-timeout" class="top">Timeout</label>
+		<div class="field">
+			<input
+				id="f-timeout"
+				class="mono timeout"
+				value={form.timeout ?? ''}
+				placeholder="default"
+				aria-describedby="f-timeout-hint"
+				oninput={(e) => (form.timeout = e.currentTarget.value.trim() || null)}
+			/>
+			<p class="hint" id="f-timeout-hint">
+				e.g. <code>500ms</code>, <code>10s</code>, <code>2m</code>. Empty uses <code>timeout</code> from
+				<code>sankh.toml</code> (30s if unset).
+			</p>
+		</div>
 	</section>
 
 	<section class="line">
@@ -152,6 +178,24 @@
 	}
 	label {
 		color: var(--muted);
+	}
+	label.top {
+		align-self: start;
+		padding-top: 5px;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+	.desc {
+		field-sizing: content;
+		min-height: calc(2lh + 10px);
+		max-height: 12lh;
+		font-family: inherit;
+	}
+	.timeout {
+		max-width: 140px;
 	}
 	.line {
 		display: flex;

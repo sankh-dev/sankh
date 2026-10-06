@@ -2,6 +2,7 @@
 	const PATHS = {
 		plus: 'M12 5v14M5 12h14',
 		play: 'M7 4.5v15l12-7.5z',
+		stop: 'M6 6h12v12H6z',
 		more: 'M12 6h.01M12 12h.01M12 18h.01',
 		chevron: 'M9 6l6 6-6 6',
 		x: 'M6 6l12 12M18 6L6 18',
@@ -37,7 +38,7 @@
 	width={size}
 	height={size}
 	viewBox="0 0 24 24"
-	fill={name === 'play' ? 'currentColor' : 'none'}
+	fill={name === 'play' || name === 'stop' ? 'currentColor' : 'none'}
 	stroke="currentColor"
 	stroke-width={name === 'more' ? 3 : 2}
 	stroke-linecap="round"

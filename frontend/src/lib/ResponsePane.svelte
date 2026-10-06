@@ -146,6 +146,10 @@
 		background: var(--fail-bg);
 		color: var(--fail);
 	}
+	.outcome.cancelled {
+		background: var(--warn-bg);
+		color: var(--warn);
+	}
 	.status {
 		font: 700 12px/1 var(--mono);
 		padding: 4px 8px;

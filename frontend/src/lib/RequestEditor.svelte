@@ -14,14 +14,18 @@
 		vars: string[];
 		canRun: boolean;
 		running: boolean;
+		stopping: boolean;
 		onsave: (content: string) => Promise<RequestDoc>;
 		onrun: () => void;
+		/** Present while a run can be stopped. */
+		onstop?: () => void;
 		ondelete: () => void;
 		/** Absent when there is no other collection to copy to. */
 		oncopy?: () => void;
 	}
 
-	let { cid, collection, doc, vars, canRun, running, onsave, onrun, ondelete, oncopy }: Props = $props();
+	let { cid, collection, doc, vars, canRun, running, stopping, onsave, onrun, onstop, ondelete, oncopy }: Props =
+		$props();
 
 	// The parent remounts this component (via {#key}) when another file opens,
 	// so initial values are taken once from the prop.
@@ -123,9 +127,15 @@
 		<button onclick={save} disabled={saving || !dirty} title="Save (Ctrl+S)">
 			<Icon name="save" size={13} />Save
 		</button>
-		<button class="primary" onclick={saveAndRun} disabled={!canRun || running} title="Run (Ctrl+Enter)">
-			<Icon name="play" size={11} />{running ? 'Running…' : 'Run'}
-		</button>
+		{#if running && onstop}
+			<button class="stop" onclick={onstop} disabled={stopping} title="Stop the run (Esc)">
+				<Icon name="stop" size={10} />{stopping ? 'Stopping…' : 'Stop'}
+			</button>
+		{:else}
+			<button class="primary" onclick={saveAndRun} disabled={!canRun || running} title="Run (Ctrl+Enter)">
+				<Icon name="play" size={11} />{running ? 'Running…' : 'Run'}
+			</button>
+		{/if}
 		<Menu title="More actions for this request" items={menu} />
 	</div>
 
@@ -197,6 +207,11 @@
 	.tabs .active:hover:not(:disabled) {
 		background: var(--panel-3);
 		color: var(--text);
+	}
+	.stop {
+		color: var(--fail);
+		border-color: var(--fail);
+		background: var(--fail-bg);
 	}
 	.copied {
 		display: inline-flex;

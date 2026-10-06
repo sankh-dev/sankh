@@ -203,6 +203,7 @@ fn request(
         name: req.name.clone(),
         description: req.description.clone(),
         tags: Vec::new(),
+        timeout: None,
         expects: req.expects.clone(),
         captures: req.captures.clone(),
         extra_header_lines: extra,

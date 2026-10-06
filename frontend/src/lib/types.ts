@@ -105,6 +105,7 @@ export interface ParsedRequest {
 	name: string;
 	description: string | null;
 	tags: string[];
+	timeout_ms?: number;
 	mode: 'form' | 'raw';
 	raw_reason: string | null;
 	curl: CurlCommand | null;
@@ -117,6 +118,8 @@ export interface RequestForm {
 	name: string;
 	description: string | null;
 	tags: string[];
+	/** `@timeout` argument, e.g. `10s`; null uses the collection default. */
+	timeout: string | null;
 	expects: string[];
 	captures: string[];
 	extra_header_lines: string[];
@@ -150,7 +153,7 @@ export interface ResponseView {
 export interface RequestResult {
 	path: string;
 	name: string;
-	outcome: 'passed' | 'failed' | 'error';
+	outcome: 'passed' | 'failed' | 'error' | 'cancelled';
 	response: ResponseView | null;
 	assertions: AssertionResult[];
 	captures: { name: string; value: string }[];
@@ -165,6 +168,7 @@ export interface Summary {
 	passed: number;
 	failed: number;
 	errors: number;
+	cancelled: number;
 	duration_ms: number;
 }
 
@@ -172,6 +176,7 @@ export type RunEvent =
 	| { type: 'start'; collection: string; total: number; paths: string[] }
 	| { type: 'running'; path: string }
 	| { type: 'result'; result: RequestResult }
+	| { type: 'cancelled'; skipped: string[] }
 	| { type: 'done'; summary: Summary };
 
 export interface RunState {
@@ -181,6 +186,8 @@ export interface RunState {
 	results: Record<string, RequestResult>;
 	current: string | null;
 	summary: Summary | null;
+	/** Paths not run because the run was stopped. */
+	skipped: string[];
 }
 
 export interface EnvVar {

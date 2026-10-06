@@ -13,12 +13,15 @@ use crate::assert::{self, AssertionResult};
 use crate::capture;
 use crate::collection::Collection;
 use crate::env::Env;
+use crate::parser;
 use crate::redact::{self, Redactor};
 use crate::request::{Expect, Request, Severity};
 use crate::trust::Trusted;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 const WRAPPER: &str = r#"curl() {
@@ -55,6 +58,8 @@ pub enum Outcome {
     Passed,
     Failed,
     Error,
+    /// Stopped by the user before it finished.
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,13 +98,20 @@ pub struct RequestResult {
 #[derive(Debug, Clone)]
 pub struct RunOptions {
     pub timeout: Duration,
+    /// Set from another thread to stop the request in flight.
+    pub cancel: Arc<AtomicBool>,
 }
 
 impl RunOptions {
     pub fn for_collection(c: &Collection) -> RunOptions {
         RunOptions {
             timeout: Duration::from_secs(c.config.timeout.unwrap_or(DEFAULT_TIMEOUT_SECS)),
+            cancel: Arc::default(),
         }
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
     }
 }
 
@@ -207,7 +219,11 @@ fn execute(
         Err((msg, stderr)) => {
             result.stderr = ctx.redactor.redact(&stderr);
             result.error = Some(ctx.redactor.redact(&msg));
-            result.outcome = Outcome::Error;
+            result.outcome = if ctx.options.cancelled() {
+                Outcome::Cancelled
+            } else {
+                Outcome::Error
+            };
             return result;
         }
     };
@@ -359,6 +375,7 @@ fn spawn(
         Err(_) => file.to_string_lossy().into_owned(),
     };
 
+    let timeout = req.timeout().unwrap_or(ctx.options.timeout);
     let mut cmd = Command::new(&shell);
     cmd.arg("-c")
         .arg(WRAPPER)
@@ -371,13 +388,12 @@ fn spawn(
         .env("SANKH_OUT_BODY", &body_path)
         .env("SANKH_OUT_HEADERS", &headers_path)
         .env("SANKH_OUT_META", &meta_path)
-        .env(
-            "SANKH_TIMEOUT",
-            ctx.options.timeout.as_secs().max(1).to_string(),
-        )
+        .env("SANKH_TIMEOUT", timeout.as_secs_f64().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
 
     let child = cmd.spawn().map_err(|e| {
         (
@@ -385,7 +401,7 @@ fn spawn(
             String::new(),
         )
     })?;
-    let output = wait_with_timeout(child, ctx.options.timeout + Duration::from_secs(5))
+    let output = wait_with_timeout(child, timeout + Duration::from_secs(5), &ctx.options.cancel)
         .map_err(|e| (e, String::new()))?;
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -412,7 +428,10 @@ fn spawn(
     if status == 0 {
         let msg = meta["errormsg"].as_str().unwrap_or("request failed");
         let msg = if exit == 28 {
-            format!("timed out after {}s: {msg}", ctx.options.timeout.as_secs())
+            format!(
+                "timed out after {}: {msg}",
+                parser::format_duration(timeout.as_millis() as u64)
+            )
         } else {
             format!("curl error {exit}: {msg}")
         };
@@ -434,9 +453,21 @@ fn spawn(
     ))
 }
 
+/// Kills the shell and, on Unix, everything it started: a surviving `curl`
+/// would hold the output pipes open and block the reader threads.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn wait_with_timeout(
     mut child: std::process::Child,
     timeout: Duration,
+    cancel: &AtomicBool,
 ) -> Result<std::process::Output, String> {
     use std::io::Read;
     let mut stdout = child.stdout.take();
@@ -459,9 +490,12 @@ fn wait_with_timeout(
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
+            Ok(None) if cancel.load(Ordering::Relaxed) => {
+                kill_tree(&mut child);
+                return Err("cancelled".into());
+            }
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
+                kill_tree(&mut child);
                 return Err(format!(
                     "request file did not finish within {}s",
                     timeout.as_secs()

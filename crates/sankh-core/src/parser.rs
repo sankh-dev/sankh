@@ -9,9 +9,41 @@ use std::sync::LazyLock;
 static VAR_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z_][A-Z0-9_]*$").unwrap());
 static TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9_-]+$").unwrap());
 
-const LATER_ANNOTATIONS: &[&str] = &[
-    "require", "secret", "timeout", "retry", "skip", "delay", "depends",
-];
+const LATER_ANNOTATIONS: &[&str] = &["require", "secret", "retry", "skip", "delay", "depends"];
+
+/// Parses a duration such as `500ms`, `10s`, `2m` or a bare number of
+/// seconds, returning milliseconds.
+pub fn parse_duration(text: &str) -> Result<u64, String> {
+    let t = text.trim();
+    let (num, mult) = if let Some(n) = t.strip_suffix("ms") {
+        (n, 1)
+    } else if let Some(n) = t.strip_suffix('s') {
+        (n, 1000)
+    } else if let Some(n) = t.strip_suffix('m') {
+        (n, 60_000)
+    } else {
+        (t, 1000)
+    };
+    match num.trim().parse::<u64>() {
+        Ok(n) if n > 0 => n
+            .checked_mul(mult)
+            .ok_or_else(|| format!("duration `{t}` is too large")),
+        _ => Err(format!(
+            "invalid duration `{t}`: use e.g. `500ms`, `10s` or `2m`"
+        )),
+    }
+}
+
+/// Renders milliseconds in the largest whole unit: `2m`, `10s`, `500ms`.
+pub fn format_duration(ms: u64) -> String {
+    if ms % 60_000 == 0 {
+        format!("{}m", ms / 60_000)
+    } else if ms % 1000 == 0 {
+        format!("{}s", ms / 1000)
+    } else {
+        format!("{ms}ms")
+    }
+}
 
 /// Display name derived from a filename: `02-create-order.sh` -> "create order".
 pub fn default_name(file_name: &str) -> String {
@@ -40,6 +72,7 @@ pub fn parse(content: &str, file_name: &str) -> Request {
         name: String::new(),
         description: None,
         tags: Vec::new(),
+        timeout_ms: None,
         expects: Vec::new(),
         captures: Vec::new(),
         mode: Mode::Form,
@@ -127,7 +160,16 @@ fn parse_header_line(req: &mut Request, line: &str, line_no: usize) {
                 req.name = args.to_string();
             }
         }
-        "description" => req.description = Some(args.to_string()),
+        "description" => {
+            req.description = Some(match req.description.take() {
+                Some(prev) => format!("{prev}\n{args}"),
+                None => args.to_string(),
+            })
+        }
+        "timeout" => match parse_duration(args) {
+            Ok(ms) => req.timeout_ms = Some(ms),
+            Err(m) => err(format!("`@timeout`: {m}")),
+        },
         "tags" => {
             for tag in args.split_whitespace() {
                 if !TAG.is_match(tag) {
@@ -591,6 +633,37 @@ curl -sS -X POST "$BASE_URL/users" \
                 .all(|d| d.severity == Severity::Warning)
         );
         assert_eq!(r.diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn joins_description_lines() {
+        let r = parse(
+            "# @description Creates a user.\n# @description\n# @description Needs $TOKEN.\ncurl x\n",
+            "x.sh",
+        );
+        assert_eq!(
+            r.description.as_deref(),
+            Some("Creates a user.\n\nNeeds $TOKEN.")
+        );
+    }
+
+    #[test]
+    fn parses_timeouts() {
+        assert_eq!(parse_duration("500ms"), Ok(500));
+        assert_eq!(parse_duration("10s"), Ok(10_000));
+        assert_eq!(parse_duration("2m"), Ok(120_000));
+        assert_eq!(parse_duration("7"), Ok(7000));
+        assert!(parse_duration("0s").is_err());
+        assert!(parse_duration("soon").is_err());
+        assert_eq!(format_duration(120_000), "2m");
+        assert_eq!(format_duration(10_000), "10s");
+        assert_eq!(format_duration(1500), "1500ms");
+
+        let r = parse("# @timeout 3s\ncurl x\n", "x.sh");
+        assert_eq!(r.timeout_ms, Some(3000));
+        assert!(r.diagnostics.is_empty());
+        let r = parse("# @timeout forever\ncurl x\n", "x.sh");
+        assert!(r.has_errors());
     }
 
     #[test]

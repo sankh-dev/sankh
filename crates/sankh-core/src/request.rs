@@ -172,8 +172,12 @@ pub enum Mode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {
     pub name: String,
+    /// Joined with `\n` when there are several `@description` lines.
     pub description: Option<String>,
     pub tags: Vec<String>,
+    /// Per-request limit from `@timeout`, overriding the collection default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
     pub expects: Vec<Expect>,
     pub captures: Vec<Capture>,
     pub mode: Mode,
@@ -189,6 +193,10 @@ pub struct Request {
 }
 
 impl Request {
+    pub fn timeout(&self) -> Option<std::time::Duration> {
+        self.timeout_ms.map(std::time::Duration::from_millis)
+    }
+
     pub fn has_errors(&self) -> bool {
         self.diagnostics
             .iter()

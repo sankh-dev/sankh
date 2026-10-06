@@ -22,6 +22,9 @@ jaq-core.workspace = true
 jaq-std.workspace = true
 jaq-json.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 insta.workspace = true
 httpmock.workspace = true

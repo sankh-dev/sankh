@@ -146,6 +146,7 @@ pub fn app(state: Arc<AppState>) -> Router {
             post(api::import_postman).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
         )
         .route("/runs/{id}/events", get(api::run_events))
+        .route("/runs/{id}/cancel", post(api::cancel_run))
         .route("/events", get(api::change_events))
         .nest("/c/{cid}", collection);
     Router::new()

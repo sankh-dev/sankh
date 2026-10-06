@@ -373,7 +373,7 @@ pub struct PostmanBody {
     /// Texts of exported Postman environments.
     #[serde(default)]
     envs: Vec<String>,
-    /// Output folder; defaults to a free `~/<collection-slug>` folder.
+    /// Output folder; defaults to a free `~/sankh-collections/<collection-slug>` folder.
     #[serde(default)]
     dir: Option<String>,
     #[serde(default)]
@@ -442,9 +442,15 @@ fn dir_nonempty(dir: &std::path::Path) -> bool {
     std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some())
 }
 
-/// `~/<slug>`, or `~/<slug>-2`, `~/<slug>-3`, ... when that folder is in use.
+/// Parent folder for imports when none is given; created on the first import.
+const IMPORT_HOME: &str = "sankh-collections";
+
+/// `~/sankh-collections/<slug>`, or `<slug>-2`, `<slug>-3`, ... when that
+/// folder is in use.
 fn default_import_dir(slug: &str) -> std::path::PathBuf {
-    let base = dirs::home_dir().unwrap_or_else(|| ".".into());
+    let base = dirs::home_dir()
+        .unwrap_or_else(|| ".".into())
+        .join(IMPORT_HOME);
     let mut dir = base.join(slug);
     let mut n = 2;
     while dir_nonempty(&dir) {
@@ -764,10 +770,14 @@ pub async fn start_run(
 
     let state2 = state.clone();
     tokio::task::spawn_blocking(move || {
-        let options = RunOptions::for_collection(&collection);
+        let mut options = RunOptions::for_collection(&collection);
+        options.cancel = handle.cancel.clone();
         let mut ctx = RunContext::new(env, options);
         let mut results = Vec::new();
         for file in &files {
+            if handle.cancelled() {
+                break;
+            }
             let rel = collection.rel(file);
             handle.push(json!({ "type": "running", "path": rel }));
             let result = runner::run_request(&trusted, &collection, file, &mut ctx);
@@ -779,11 +789,29 @@ pub async fn start_run(
             .lock()
             .unwrap()
             .insert(capture_key, ctx.env.captures.clone());
+        if handle.cancelled() {
+            let skipped: Vec<String> = files[results.len()..]
+                .iter()
+                .map(|f| collection.rel(f))
+                .collect();
+            handle.push(json!({ "type": "cancelled", "skipped": skipped }));
+        }
         handle.push(json!({ "type": "done", "summary": Summary::of(&results) }));
         handle.finish();
     });
 
     Ok(Json(json!({ "id": id })))
+}
+
+/// Stops a run: kills the request in flight and skips the rest.
+pub async fn cancel_run(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult {
+    let handle = state
+        .runs
+        .get(&id)
+        .ok_or_else(|| not_found("unknown run"))?;
+    let was_running = !handle.is_done();
+    handle.cancel();
+    Ok(Json(json!({ "cancelled": was_running })))
 }
 
 pub async fn run_events(

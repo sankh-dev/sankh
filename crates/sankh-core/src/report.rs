@@ -9,6 +9,7 @@ pub struct Summary {
     pub passed: usize,
     pub failed: usize,
     pub errors: usize,
+    pub cancelled: usize,
     pub duration_ms: f64,
 }
 
@@ -23,6 +24,7 @@ impl Summary {
                 Outcome::Passed => s.passed += 1,
                 Outcome::Failed => s.failed += 1,
                 Outcome::Error => s.errors += 1,
+                Outcome::Cancelled => s.cancelled += 1,
             }
             s.duration_ms += r.duration_ms;
         }
@@ -30,7 +32,7 @@ impl Summary {
     }
 
     pub fn success(&self) -> bool {
-        self.failed == 0 && self.errors == 0
+        self.failed == 0 && self.errors == 0 && self.cancelled == 0
     }
 }
 
@@ -127,6 +129,9 @@ pub fn junit(collection: &str, results: &[RequestResult]) -> String {
                     xml_escape(details.lines().next().unwrap_or("error")),
                     xml_escape(&details)
                 )),
+                Outcome::Cancelled => {
+                    out.push_str(">\n      <skipped message=\"cancelled\" />\n    </testcase>\n")
+                }
             }
         }
         out.push_str("  </testsuite>\n");

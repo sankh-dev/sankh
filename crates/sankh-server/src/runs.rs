@@ -9,6 +9,7 @@ use futures::Stream;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 
@@ -18,6 +19,8 @@ pub struct RunHandle {
     events: Mutex<Vec<Value>>,
     done: Mutex<bool>,
     tx: watch::Sender<usize>,
+    /// Shared with the runner's `RunOptions::cancel`.
+    pub cancel: Arc<AtomicBool>,
 }
 
 impl RunHandle {
@@ -27,7 +30,20 @@ impl RunHandle {
             events: Mutex::new(Vec::new()),
             done: Mutex::new(false),
             tx,
+            cancel: Arc::default(),
         })
+    }
+
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+
+    pub fn is_done(&self) -> bool {
+        *self.done.lock().unwrap()
     }
 
     pub fn push(&self, event: Value) {

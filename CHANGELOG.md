@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Postman import asks where to create the collection.** The dialog now
+  shows a **Where to create it** section right after the file pickers:
+  **Save in** (a parent folder you can browse in the web UI too, not only in
+  the desktop app) and **Folder name**, with the full path it will create, and
+  the button names the folder (`Import to orders-api/`).
+- **Imports default to `~/sankh-collections/<name>`** instead of a new folder
+  directly in your home folder. The folder is created on the first import.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

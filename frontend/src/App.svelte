@@ -12,6 +12,7 @@
 	import EnvManager, { type EnvChange } from './lib/EnvManager.svelte';
 	import Icon from './lib/Icon.svelte';
 	import Menu from './lib/Menu.svelte';
+	import Splitter from './lib/Splitter.svelte';
 	import { ApiError, api, run, setToken, streamEvents } from './lib/api';
 	import type { CollectionInfo, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
 
@@ -20,6 +21,28 @@
 
 	const ENV_KEY = (cid: string) => `sankh-env:${cid}`;
 	const key = (r: Ref) => `${r.cid}:${r.path}`;
+
+	const SIDEBAR_KEY = 'sankh-layout:sidebar';
+	const EDITOR_KEY = 'sankh-layout:editor';
+	const SIDEBAR_DEFAULT = 270;
+	const SIDEBAR_MIN = 180;
+	const SIDEBAR_MAX = 600;
+	const COL_MIN = 280;
+	const SPLITTER_W = 4;
+
+	function stored(k: string, fallback: number, ok: (n: number) => boolean) {
+		const n = Number(localStorage.getItem(k));
+		return localStorage.getItem(k) !== null && Number.isFinite(n) && ok(n) ? n : fallback;
+	}
+
+	let sidebarW = $state(stored(SIDEBAR_KEY, SIDEBAR_DEFAULT, (n) => n >= SIDEBAR_MIN && n <= SIDEBAR_MAX));
+	/** Editor's share of the width left after the sidebar. */
+	let editorFrac = $state(stored(EDITOR_KEY, 0.5, (n) => n > 0 && n < 1));
+	let mainW = $state(0);
+	let restW = $derived(Math.max(0, mainW - sidebarW - 2 * SPLITTER_W));
+
+	$effect(() => localStorage.setItem(SIDEBAR_KEY, String(sidebarW)));
+	$effect(() => localStorage.setItem(EDITOR_KEY, String(editorFrac)));
 
 	let info = $state.raw<Info | null>(null);
 	let trees = $state.raw<Record<string, TreeNode>>({});
@@ -33,6 +56,8 @@
 	let results = $state<Record<string, RequestResult>>({});
 	let runState = $state<RunState | null>(null);
 	let running = $state.raw<Ref | null>(null);
+	let runId = $state<string | null>(null);
+	let stopping = $state(false);
 	let newIn = $state.raw<Ref | null>(null);
 	let adding = $state(false);
 	let importing = $state(false);
@@ -185,29 +210,50 @@
 		const isFile = path.endsWith('.sh');
 		runState = isFile
 			? null
-			: { collection: cid, target: path, paths: [], results: {}, current: null, summary: null };
+			: { collection: cid, target: path, paths: [], results: {}, current: null, summary: null, skipped: [] };
 		running = { cid, path };
 		try {
-			await run(cid, path, envs[cid] ?? '', (ev) => {
-				if (ev.type === 'start' && runState) runState.paths = ev.paths;
-				else if (ev.type === 'running') {
-					running = { cid, path: ev.path };
-					if (runState) runState.current = ev.path;
-				} else if (ev.type === 'result') {
-					results[key({ cid, path: ev.result.path })] = ev.result;
-					if (runState) runState.results[ev.result.path] = ev.result;
-					if (isFile) selected = { cid, path: ev.result.path };
-				} else if (ev.type === 'done' && runState) {
-					runState.summary = ev.summary;
-					runState.current = null;
-				}
-			});
+			await run(
+				cid,
+				path,
+				envs[cid] ?? '',
+				(ev) => {
+					if (ev.type === 'start' && runState) runState.paths = ev.paths;
+					else if (ev.type === 'running') {
+						running = { cid, path: ev.path };
+						if (runState) runState.current = ev.path;
+					} else if (ev.type === 'result') {
+						results[key({ cid, path: ev.result.path })] = ev.result;
+						if (runState) runState.results[ev.result.path] = ev.result;
+						if (isFile) selected = { cid, path: ev.result.path };
+					} else if (ev.type === 'cancelled' && runState) {
+						runState.skipped = ev.skipped;
+					} else if (ev.type === 'done' && runState) {
+						runState.summary = ev.summary;
+						runState.current = null;
+					}
+				},
+				(id) => (runId = id)
+			);
 			await loadVars(cid);
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 403) info = await api.info();
 			fail(e);
 		} finally {
 			running = null;
+			runId = null;
+			stopping = false;
+		}
+	}
+
+	async function stopRun() {
+		if (!runId || stopping) return;
+		stopping = true;
+		try {
+			await api.cancelRun(runId);
+		} catch (e) {
+			stopping = false;
+			fail(e);
 		}
 	}
 
@@ -281,6 +327,12 @@
 	}
 
 	function onkeydown(e: KeyboardEvent) {
+		const dialogOpen = newIn || adding || importing || copying || managingEnvs !== null || needToken;
+		if (e.key === 'Escape' && runId && !dialogOpen && !e.defaultPrevented) {
+			e.preventDefault();
+			stopRun();
+			return;
+		}
 		if (!(e.ctrlKey || e.metaKey)) return;
 		if (e.key === 's' && editor) {
 			e.preventDefault();
@@ -348,7 +400,12 @@
 		</div>
 	{/if}
 
-	<main>
+	<main
+		bind:clientWidth={mainW}
+		style:--sidebar-w="{sidebarW}px"
+		style:--editor-fr="{editorFrac}fr"
+		style:--response-fr="{1 - editorFrac}fr"
+	>
 		<aside>
 			{#each collections as col (col.id)}
 				<CollectionSection
@@ -380,6 +437,15 @@
 				<p class="hint">Session only: changes to this list are not saved.</p>
 			{/if}
 		</aside>
+		<Splitter
+			class="split-sidebar"
+			label="Resize file explorer"
+			value={sidebarW}
+			min={SIDEBAR_MIN}
+			max={SIDEBAR_MAX}
+			onchange={(v) => (sidebarW = v)}
+			onreset={() => (sidebarW = SIDEBAR_DEFAULT)}
+		/>
 
 		<section class="editor-col">
 			{#if doc && docRef}
@@ -392,8 +458,10 @@
 						vars={vars[docRef.cid] ?? []}
 						canRun={isTrusted(docRef.cid)}
 						running={running !== null}
+						{stopping}
 						onsave={save}
 						onrun={() => runPath(docRef!.cid, doc!.path)}
+						onstop={runId ? stopRun : undefined}
 						ondelete={remove}
 						oncopy={copyTargets.length ? () => (copying = true) : undefined}
 					/>
@@ -409,6 +477,15 @@
 				</div>
 			{/if}
 		</section>
+		<Splitter
+			class="split-editor"
+			label="Resize editor"
+			value={editorFrac * restW}
+			min={COL_MIN}
+			max={restW - COL_MIN}
+			onchange={(v) => restW > 0 && (editorFrac = Math.min(0.95, Math.max(0.05, v / restW)))}
+			onreset={() => (editorFrac = 0.5)}
+		/>
 
 		<section class="response-col">
 			{#if runState}
@@ -417,6 +494,8 @@
 					name={byId[runState.collection]?.name ?? runState.collection}
 					selected={selected?.cid === runState.collection ? selected.path : null}
 					onpick={(p) => open(runState!.collection, p)}
+					{stopping}
+					onstop={runId && !runState.summary ? stopRun : undefined}
 				/>
 			{/if}
 			<ResponsePane result={shownResult} />
@@ -497,11 +576,10 @@
 	main {
 		flex: 1;
 		display: grid;
-		grid-template-columns: 270px minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-columns: var(--sidebar-w) 4px minmax(0, var(--editor-fr)) 4px minmax(0, var(--response-fr));
 		min-height: 0;
 	}
 	aside {
-		border-right: 1px solid var(--border);
 		overflow: auto;
 		padding: 0 0 6px;
 		background: var(--panel);
@@ -531,7 +609,6 @@
 		font-size: 12px;
 	}
 	.editor-col {
-		border-right: 1px solid var(--border);
 		min-height: 0;
 	}
 	.response-col {
@@ -590,15 +667,24 @@
 	}
 	@media (max-width: 1100px) {
 		main {
-			grid-template-columns: 240px minmax(0, 1fr);
+			grid-template-columns: var(--sidebar-w) 4px minmax(0, 1fr);
 			grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 		}
-		aside {
-			grid-row: span 2;
+		aside,
+		main :global(.split-sidebar) {
+			grid-row: 1 / span 2;
+		}
+		main :global(.split-editor) {
+			display: none;
 		}
 		.editor-col {
-			border-right: none;
+			grid-column: 3;
+			grid-row: 1;
 			border-bottom: 1px solid var(--border);
+		}
+		.response-col {
+			grid-column: 3;
+			grid-row: 2;
 		}
 	}
 </style>

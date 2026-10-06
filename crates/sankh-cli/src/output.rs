@@ -77,6 +77,7 @@ impl Printer {
             Outcome::Passed => (green("✓"), r.name.clone()),
             Outcome::Failed => (red("✗"), red(&r.name)),
             Outcome::Error => (red("!"), red(&r.name)),
+            Outcome::Cancelled => (yellow("-"), yellow(&r.name)),
         };
         let mut meta = Vec::new();
         if let Some(resp) = &r.response {

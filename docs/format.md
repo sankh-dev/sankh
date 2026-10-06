@@ -94,8 +94,9 @@ with `sh`. Files are sourced from the collection root as the working directory.
 | Annotation | Repeatable | Meaning |
 | --- | --- | --- |
 | `@name <text>` | no | Display name. Default: file name without number prefix and extension (`02-create-order.sh` → "create order"). |
-| `@description <text>` | no | Notes shown in the UI. No effect on execution. |
+| `@description <text>` | yes (one line each) | Notes shown in the UI. Several lines form a multi-line description; an empty `# @description` is a blank line. No effect on execution. |
 | `@tags <tag>...` | yes (merged) | Labels for `--tag`. Lowercase letters, digits, `-`, `_`. |
+| `@timeout <duration>` | no | Limit for this request (curl `--max-time`), overriding `timeout` in `sankh.toml`. `500ms`, `10s`, `2m`, or a bare number of seconds. |
 | `@expect status <codes>` | yes (all must pass) | `200`, `2xx`, or `200\|201\|204`. |
 | `@expect json <jq> <op> <value>` | yes (all evaluated) | Assertion on the JSON body. |
 | `@expect json <jq> exists` | yes | The expression yields a non-null value. |
@@ -164,5 +165,5 @@ in the file).
 ## Later annotations
 
 `@expect header`, `@expect time`, `@expect body`, `@require`, `@secret`,
-`@timeout`, `@retry`, `@skip`, `@delay` and `@depends` are proposed for v1.x. They are recognised and ignored with a
+`@retry`, `@skip`, `@delay` and `@depends` are proposed for v1.x. They are recognised and ignored with a
 warning by v1 binaries, so collections stay forward compatible.

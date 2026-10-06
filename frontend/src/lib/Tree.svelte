@@ -147,6 +147,9 @@
 		background: var(--fail);
 		box-shadow: 0 0 0 3px var(--fail-bg);
 	}
+	.dot.cancelled {
+		background: var(--muted);
+	}
 	.dot.running {
 		background: var(--warn);
 		animation: pulse 0.8s infinite alternate;

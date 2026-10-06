@@ -118,7 +118,8 @@ export const api = {
 		call<unknown>('DELETE', `${c(cid)}/captures?env=${encodeURIComponent(env || '_')}`),
 	trust: (cid: string) => call<TrustStatus>('POST', `${c(cid)}/trust`),
 	startRun: (cid: string, path: string, env: string) =>
-		call<{ id: string }>('POST', `${c(cid)}/run`, { path, env })
+		call<{ id: string }>('POST', `${c(cid)}/run`, { path, env }),
+	cancelRun: (id: string) => call<{ cancelled: boolean }>('POST', `/runs/${encodeURIComponent(id)}/cancel`)
 };
 
 /**
@@ -154,7 +155,14 @@ export async function streamEvents<T>(path: string, onEvent: (e: T) => void, sig
 	}
 }
 
-export async function run(cid: string, path: string, env: string, onEvent: (e: RunEvent) => void) {
+export async function run(
+	cid: string,
+	path: string,
+	env: string,
+	onEvent: (e: RunEvent) => void,
+	onStart?: (id: string) => void
+) {
 	const { id } = await api.startRun(cid, path, env);
+	onStart?.(id);
 	await streamEvents<RunEvent>(`/runs/${id}/events`, onEvent);
 }

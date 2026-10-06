@@ -389,6 +389,80 @@ async fn untrusted_runs_are_refused_then_stream_after_trust() {
 }
 
 #[tokio::test]
+async fn runs_can_be_cancelled_and_honour_timeouts() {
+    let server = httpmock::MockServer::start();
+    server.mock(|when, then| {
+        when.path("/slow");
+        then.status(200)
+            .delay(std::time::Duration::from_secs(20))
+            .body("late");
+    });
+    let env = format!("BASE_URL={}\n", server.base_url());
+    let dir = folder(&[
+        ("environments/dev.env", &env),
+        ("01-slow.sh", "curl -sS \"$BASE_URL/slow\"\n"),
+        ("02-next.sh", "curl -sS \"$BASE_URL/slow\"\n"),
+        (
+            "quick/01-limited.sh",
+            "# @timeout 300ms\ncurl -sS \"$BASE_URL/slow\"\n",
+        ),
+    ]);
+    let (s, cid) = state(&dir, None);
+    call(&s, "POST", &format!("/api/c/{cid}/trust"), &[], None).await;
+
+    let (status, started) = call(
+        &s,
+        "POST",
+        &format!("/api/c/{cid}/run"),
+        &[],
+        Some(json!({ "path": "", "env": "dev" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = started["id"].as_str().unwrap().to_string();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let t = std::time::Instant::now();
+    let (status, body) = call(&s, "POST", &format!("/api/runs/{id}/cancel"), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["cancelled"], true);
+
+    let (_, events) = call(&s, "GET", &format!("/api/runs/{id}/events"), &[], None).await;
+    assert!(t.elapsed().as_secs() < 5, "cancel took {:?}", t.elapsed());
+    let events: Vec<Value> = events
+        .as_str()
+        .unwrap()
+        .lines()
+        .filter_map(|l| l.strip_prefix("data: "))
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let kinds: Vec<&str> = events.iter().map(|e| e["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["start", "running", "result", "cancelled", "done"]);
+    assert_eq!(events[2]["result"]["outcome"], "cancelled");
+    assert_eq!(
+        events[3]["skipped"],
+        json!(["02-next.sh", "quick/01-limited.sh"])
+    );
+    assert_eq!(events[4]["summary"]["cancelled"], 1);
+
+    let (status, _) = call(&s, "POST", "/api/runs/nope/cancel", &[], None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let t = std::time::Instant::now();
+    let (_, events, _) = run(&s, &cid, json!({ "path": "quick", "env": "dev" })).await;
+    assert!(t.elapsed().as_secs() < 5, "timeout took {:?}", t.elapsed());
+    let result = &events[2]["result"];
+    assert_eq!(result["outcome"], "error");
+    assert!(
+        result["error"]
+            .as_str()
+            .unwrap()
+            .contains("timed out after 300ms"),
+        "{result}"
+    );
+    drop(dir);
+}
+
+#[tokio::test]
 async fn adds_unlinks_and_copies_between_collections() {
     let a = folder(&[
         ("sankh.toml", "name = \"Users API\"\n"),
@@ -528,6 +602,20 @@ async fn imports_postman_with_preview_then_write() {
     let files = preview["files"].as_array().unwrap();
     assert!(files.iter().any(|f| f == "sankh.toml"));
     assert!(!dir.exists(), "preview must not write");
+
+    let mut no_dir = body.clone();
+    no_dir.as_object_mut().unwrap().remove("dir");
+    let (status, defaulted) = call(&s, "POST", "/api/import/postman", &[], Some(no_dir)).await;
+    assert_eq!(status, StatusCode::OK, "{defaulted}");
+    let default_dir = std::path::PathBuf::from(defaulted["dir"].as_str().unwrap());
+    assert_eq!(
+        default_dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str()),
+        Some("sankh-collections"),
+        "{defaulted}"
+    );
 
     let mut write = body.clone();
     write["write"] = json!(true);

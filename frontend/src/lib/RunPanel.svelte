@@ -8,9 +8,12 @@
 		name: string;
 		selected: string | null;
 		onpick: (path: string) => void;
+		stopping: boolean;
+		/** Present while the run can be stopped. */
+		onstop?: () => void;
 	}
 
-	let { run, name, selected, onpick }: Props = $props();
+	let { run, name, selected, onpick, stopping, onstop }: Props = $props();
 	let done = $derived(Object.keys(run.results).length);
 </script>
 
@@ -21,9 +24,17 @@
 			<span class="pill ok">{run.summary.passed} passed</span>
 			{#if run.summary.failed}<span class="pill bad">{run.summary.failed} failed</span>{/if}
 			{#if run.summary.errors}<span class="pill bad">{run.summary.errors} errors</span>{/if}
+			{#if run.summary.cancelled || run.skipped.length}
+				<span class="pill warn">stopped{run.skipped.length ? `, ${run.skipped.length} skipped` : ''}</span>
+			{/if}
 			<span class="muted">{run.summary.duration_ms.toFixed(0)} ms</span>
 		{:else}
 			<span class="muted">{done}/{run.paths.length}</span>
+			{#if onstop}
+				<button class="stop small" onclick={onstop} disabled={stopping} title="Stop the run (Esc)">
+					<Icon name="stop" size={9} />{stopping ? 'Stopping…' : 'Stop'}
+				</button>
+			{/if}
 		{/if}
 	</div>
 	{#if !run.summary && run.paths.length}
@@ -32,10 +43,13 @@
 	<ul>
 		{#each run.paths as path (path)}
 			{@const r = run.results[path]}
+			{@const skipped = !r && run.skipped.includes(path)}
 			<li>
 				<button class={{ selected: selected === path }} onclick={() => onpick(path)}>
-					<span class="mark {r?.outcome ?? (run.current === path ? 'running' : 'pending')}">
-						{#if r}
+					<span class="mark {r?.outcome ?? (!skipped && run.current === path ? 'running' : 'pending')}">
+						{#if r?.outcome === 'cancelled'}
+							<Icon name="stop" size={9} />
+						{:else if r}
 							<Icon name={r.outcome === 'passed' ? 'check' : 'x'} size={12} />
 						{:else if run.current === path}
 							<span class="spinner"></span>
@@ -45,6 +59,8 @@
 					</span>
 					<span class="name">{r?.name ?? path}</span>
 					{#if r?.response}<span class="muted mono">{r.response.status}</span>{/if}
+					{#if r?.outcome === 'cancelled'}<span class="cancelled">stopped</span>{/if}
+					{#if skipped}<span class="muted">skipped</span>{/if}
 					<span class="muted mono path">{path}</span>
 				</button>
 			</li>
@@ -85,6 +101,23 @@
 	}
 	.pill.bad {
 		background: var(--fail-bg);
+	}
+	.pill.warn {
+		background: var(--warn-bg);
+		color: var(--warn);
+	}
+	.stop.small {
+		min-height: 22px;
+		padding: 0 8px;
+		gap: 4px;
+		font-size: 11px;
+		color: var(--fail);
+		border-color: var(--fail);
+		background: var(--fail-bg);
+	}
+	.cancelled {
+		color: var(--warn);
+		font-size: 11px;
 	}
 	.progress {
 		height: 2px;

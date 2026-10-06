@@ -4,6 +4,7 @@ const ANNOTATIONS: Completion[] = [
 	{ label: '@name', detail: 'display name', apply: '@name ' },
 	{ label: '@description', detail: 'notes', apply: '@description ' },
 	{ label: '@tags', detail: 'space-separated labels', apply: '@tags ' },
+	{ label: '@timeout', detail: '500ms | 10s | 2m', apply: '@timeout ' },
 	{ label: '@expect status', detail: '200 | 2xx | 200|201', apply: '@expect status ' },
 	{ label: '@expect json', detail: '<jq> <op> <value>', apply: '@expect json .' },
 	{ label: '@capture', detail: 'NAME=<jq> | header X | status', apply: '@capture ' }

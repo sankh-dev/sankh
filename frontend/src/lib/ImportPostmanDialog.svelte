@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ApiError, api } from './api';
-	import type { CollectionInfo, PostmanPreview } from './types';
+	import type { CollectionInfo, DirListing, PostmanPreview } from './types';
 
 	interface Props {
 		saved: boolean;
@@ -22,7 +22,9 @@
 	let envTexts = $state.raw<string[]>([]);
 	let envFiles = $state.raw<string[]>([]);
 	let preview = $state.raw<PostmanPreview | null>(null);
-	let dir = $state('');
+	let parent = $state('');
+	let name = $state('');
+	let listing = $state.raw<DirListing | null>(null);
 	let force = $state(false);
 	let conflict = $state(false);
 	let error = $state<string | null>(null);
@@ -34,21 +36,34 @@
 		return Object.entries(groups);
 	});
 	let showOverwrite = $derived(conflict || (preview?.nonempty ?? false));
+	let dir = $derived(parent.trim() && name.trim() ? join(parent.trim(), name.trim()) : '');
 
 	function message(e: unknown) {
 		return e instanceof Error ? e.message : String(e);
 	}
 
+	function split(path: string): [string, string] {
+		const trimmed = path.replace(/[\\/]+$/, '');
+		const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+		return cut < 0 ? ['', trimmed] : [trimmed.slice(0, cut) || trimmed.slice(0, 1), trimmed.slice(cut + 1)];
+	}
+
+	function join(base: string, child: string) {
+		const sep = base.includes('\\') && !base.includes('/') ? '\\' : '/';
+		return base.endsWith(sep) ? base + child : base + sep + child;
+	}
+
+	/** Without a destination the server picks a default, which is only wanted for a newly picked file. */
 	async function refresh(useDir = dir) {
-		if (collectionText === null) return;
+		if (collectionText === null || (!useDir && preview)) return;
 		error = null;
 		try {
 			preview = await api.previewPostman({
 				collection: collectionText,
 				envs: envTexts,
-				dir: useDir.trim() || undefined
+				dir: useDir || undefined
 			});
-			dir = preview.dir;
+			[parent, name] = split(preview.dir);
 			conflict = false;
 			force = false;
 		} catch (e) {
@@ -62,7 +77,30 @@
 		if (!file) return;
 		collectionFile = file.name;
 		collectionText = await file.text();
+		preview = null;
 		await refresh('');
+	}
+
+	/** Lists `to`, or its nearest existing ancestor (the default parent may not exist yet). */
+	async function browse(to: string) {
+		error = null;
+		let target = to.trim();
+		for (;;) {
+			try {
+				listing = await api.listDirs(target || undefined);
+				break;
+			} catch (e) {
+				const [up] = split(target);
+				if (!target || up === target) {
+					error = message(e);
+					return;
+				}
+				target = up;
+			}
+		}
+		if (target !== to.trim()) return;
+		parent = listing.path;
+		await refresh();
 	}
 
 	async function pickEnvs(event: Event) {
@@ -78,10 +116,13 @@
 		try {
 			const picked = await nativeDialog.open({
 				directory: true,
-				title: 'Choose where to write the collection',
-				defaultPath: dir.trim() || undefined
+				title: 'Choose the folder to create the collection in',
+				defaultPath: parent.trim() || undefined
 			});
-			if (typeof picked === 'string') await refresh(picked);
+			if (typeof picked === 'string') {
+				parent = picked;
+				await refresh();
+			}
 		} catch (e) {
 			error = message(e);
 		}
@@ -89,14 +130,14 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (collectionText === null || !dir.trim()) return;
+		if (collectionText === null || !dir) return;
 		error = null;
 		busy = true;
 		try {
 			const done = await api.importPostman({
 				collection: collectionText,
 				envs: envTexts,
-				dir: dir.trim(),
+				dir,
 				force
 			});
 			await onimported(done.collection);
@@ -133,6 +174,62 @@
 
 		{#if preview}
 			{@const r = preview.report}
+			<fieldset class="dest">
+				<legend>Where to create it</legend>
+				<label class="field">
+					<span>Save in</span>
+					<div class="row">
+						<input
+							class="mono"
+							bind:value={parent}
+							onchange={() => refresh()}
+							placeholder="/path/to/parent"
+							aria-label="Parent folder"
+						/>
+						{#if nativeDialog}
+							<button type="button" onclick={choose} disabled={busy}>Choose...</button>
+						{:else}
+							<button
+								type="button"
+								onclick={() => (listing ? (listing = null) : browse(parent))}
+								disabled={busy}
+								aria-expanded={listing !== null}
+							>
+								{listing ? 'Done' : 'Browse...'}
+							</button>
+						{/if}
+					</div>
+				</label>
+				{#if listing}
+					<ul class="dirs" aria-label="Folders in {listing.path}">
+						{#if listing.parent}
+							<li><button type="button" onclick={() => browse(listing!.parent!)}>..</button></li>
+						{/if}
+						{#each listing.dirs as d (d.path)}
+							<li>
+								<button type="button" onclick={() => browse(d.path)} disabled={d.collection}>
+									<span>{d.name}/</span>
+									{#if d.collection}<span class="tag">collection</span>{/if}
+								</button>
+							</li>
+						{:else}
+							<li class="muted none">No subfolders.</li>
+						{/each}
+					</ul>
+				{/if}
+				<label class="field">
+					<span>Folder name</span>
+					<input class="mono" bind:value={name} onchange={() => refresh()} aria-label="New folder name" />
+				</label>
+				{#if dir}<p class="muted">Creates <span class="mono">{dir}</span></p>{/if}
+				{#if showOverwrite}
+					<label class="check warn">
+						<input type="checkbox" bind:checked={force} />
+						This folder is not empty. Overwrite files with the same name.
+					</label>
+				{/if}
+			</fieldset>
+
 			<div class="summary">
 				<p>
 					<strong>{r.collection}</strong>: {r.requests} request(s) in {r.folders} folder(s), {preview.files.length}
@@ -172,28 +269,6 @@
 					</details>
 				{/if}
 			</div>
-
-			<label class="field">
-				<span>Write to folder</span>
-				<div class="row">
-					<input
-						class="mono"
-						bind:value={dir}
-						onchange={() => refresh()}
-						placeholder="/path/to/new-collection"
-						aria-label="Destination folder"
-					/>
-					{#if nativeDialog}
-						<button type="button" onclick={choose} disabled={busy}>Choose...</button>
-					{/if}
-				</div>
-			</label>
-			{#if showOverwrite}
-				<label class="check warn">
-					<input type="checkbox" bind:checked={force} />
-					This folder is not empty. Overwrite files with the same name.
-				</label>
-			{/if}
 		{/if}
 
 		{#if error}<p class="error">{error}</p>{/if}
@@ -202,9 +277,9 @@
 			<button
 				type="submit"
 				class="primary"
-				disabled={busy || !preview || !dir.trim() || (showOverwrite && !force)}
+				disabled={busy || !preview || !dir || (showOverwrite && !force)}
 			>
-				{busy ? 'Importing...' : 'Import'}
+				{busy ? 'Importing...' : name.trim() ? `Import to ${name.trim()}/` : 'Import'}
 			</button>
 		</div>
 	</form>
@@ -228,6 +303,48 @@
 	}
 	.row input {
 		flex: 1;
+	}
+	.dest {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin: 0;
+		padding: 8px 10px 10px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+	}
+	.dest legend {
+		padding: 0 4px;
+		font-weight: 600;
+	}
+	.dirs {
+		list-style: none;
+		margin: 0;
+		padding: 4px;
+		height: 180px;
+		overflow: auto;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg);
+	}
+	.dirs button {
+		width: 100%;
+		display: flex;
+		justify-content: space-between;
+		background: none;
+		border: none;
+		text-align: left;
+		padding: 3px 8px;
+	}
+	.dirs button:hover:not(:disabled) {
+		background: var(--panel-2);
+	}
+	.tag {
+		font-size: 10px;
+		color: var(--ok);
+	}
+	.none {
+		padding: 3px 8px;
 	}
 	.summary {
 		display: flex;
