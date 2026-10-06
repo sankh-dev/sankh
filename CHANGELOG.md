@@ -2,8 +2,32 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-06
+
+### Added
+
+- **Stop a running request or folder run.** While a run is in progress the
+  editor's **Run** button becomes **Stop**, the run panel has a **Stop**
+  button, and **Esc** stops it too. The request in flight is killed (with
+  everything its shell started) and the rest are marked skipped; captures
+  from requests that finished are kept. API: `POST /api/runs/{id}/cancel`.
+  Results have a new `cancelled` outcome and summaries a `cancelled` count.
+- **Per-request `@timeout`.** `# @timeout 500ms`, `10s`, `2m` (or a bare
+  number of seconds) overrides `timeout` in `sankh.toml` for that request,
+  and the form has a **Timeout** field. A timeout fails with
+  `timed out after <duration>`.
+- **Resizable columns.** Drag the borders between the file explorer, editor
+  and response (or focus one and use the arrow keys; double-click resets).
+  Widths are remembered.
+
 ### Changed
 
+- **Multi-line descriptions.** **Description** is now a text area. Each line
+  is saved as its own `# @description` line and joined back when read.
+- **The Tags field explains itself:** tags pick requests in CI with
+  `sankh run --tag smoke`.
+- Timeouts and stops now kill the whole process group on Unix, so a `curl`
+  started by the request file can no longer outlive its run.
 - **Postman import asks where to create the collection.** The dialog now
   shows a **Where to create it** section right after the file pickers:
   **Save in** (a parent folder you can browse in the web UI too, not only in
