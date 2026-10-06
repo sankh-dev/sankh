@@ -56,7 +56,7 @@ found as they are in a terminal.
 
 ## What is different from `sankh serve`
 
-- **Folder picker.** **Add folder** and **Import Postman...** (for the
+- **Folder picker.** **Open folder…** and **Import from Postman…** (for the
   destination of the new collection) have a **Choose...** button that opens
   the native folder dialog. See [Import from Postman](import.md#from-the-app).
 - **One window.** Launching the app again focuses the window that is already

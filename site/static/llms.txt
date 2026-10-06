@@ -1,0 +1,145 @@
+# Sankh
+
+> Sankh is a lightweight API request manager. A collection is a plain folder of
+> `.sh` files, each holding one `curl` command with comment annotations for
+> assertions and chaining. One binary runs them in CI (`sankh run`), serves a
+> local web UI (`sankh serve`), or exposes them to AI agents over MCP
+> (`sankh mcp`). Requests run on the machine, never in a browser.
+
+Docs: https://sankh.dev/docs
+Source: https://github.com/sankh-dev/sankh
+Full format reference: https://sankh.dev/docs/format
+
+## Rules for agents
+
+- Request files are shell scripts. Never run a collection the user has not
+  trusted. If a run fails with "not trusted" (exit code 3), ask the user to
+  review the files and run `sankh trust <path>` themselves. Do not pass
+  `--trust` or set `SANKH_TRUST=1` outside CI.
+- Never write secrets into `environments/*.env` (committed). Secrets go in
+  `.env.local` (gitignored) or the process environment.
+- Variables whose names contain TOKEN, SECRET, KEY, PASSWORD, PASSWD, AUTH or
+  COOKIE are shown as `***` in all output. That is expected, not a bug.
+- Prefer the machine-readable commands below over parsing human output.
+
+## Collection layout
+
+```
+my-api/
+  sankh.toml            # optional: name, default_env, timeout, [order]
+  .env.example          # documents required variables, no values
+  .env.local            # gitignored local values and secrets
+  environments/
+    dev.env             # dotenv syntax, non-secret values
+  auth/01-login.sh
+  users/01-list.sh
+  users/02-create.sh
+```
+
+- Root: nearest folder with `sankh.toml` or `environments/`.
+- Order: numeric prefix (`01-`) first by number, then alphabetical; `[order]`
+  in `sankh.toml` overrides per folder.
+
+## Request file
+
+```bash
+#!/usr/bin/env bash
+# @name Create user
+# @tags smoke
+# @expect status 201
+# @expect json .data.name == "test"
+# @capture USER_ID=.data.id
+curl -sS -X POST "$BASE_URL/users" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"test"}'
+```
+
+- Annotations live in the contiguous `#` comment block at the top (after an
+  optional shebang). A blank line ends the header.
+- Body: exactly one plain `curl` command is "form mode" (editable in the UI).
+  Pipes, `;`, redirection or several commands are "raw mode": still runs, the
+  last curl response is checked.
+- Every file still runs on its own: `set -a; . environments/dev.env; set +a; sh users/02-create.sh`
+
+## Annotations
+
+| Annotation | Meaning |
+| --- | --- |
+| `@name <text>` | Display name |
+| `@description <text>` | Notes, no effect |
+| `@tags <tag>...` | Labels for `--tag` (lowercase, digits, `-`, `_`) |
+| `@expect status <codes>` | `200`, `2xx`, or `200\|201\|204`. Default: any 2xx |
+| `@expect json <jq> <op> <value>` | Ops: `==` `!=` `>` `>=` `<` `<=` `contains` `matches "<regex>"` |
+| `@expect json <jq> exists` | Non-null result |
+| `@capture NAME=<source>` | Source: jq expression (`.id`), `header <Name>`, or `status` |
+
+- Values are JSON literals: `"text"`, `42`, `true`, `null`, arrays, objects.
+  Bare words are an error.
+- jq expressions may contain pipes: `@expect json .items | length > 0`.
+- Strings may embed variables: `@expect json .owner == "$USER_ID"`.
+- Captures run only if all assertions pass, live for the current run only, and
+  are available to later requests as `$NAME`.
+
+## Environments
+
+Lowest to highest priority: `environments/<name>.env`, `.env.local`, the
+process environment, then values captured earlier in the run.
+
+## Machine-readable commands
+
+```bash
+sankh list PATH --json                                  # request tree as JSON
+sankh workspace list --json                             # saved collections + trust status
+sankh run PATH --env dev --report json --report-file -  # JSON report on stdout, human output on stderr
+sankh run PATH --tag smoke --folder users --bail        # filters; --bail stops at first failure
+```
+
+Exit codes for `sankh run`: 0 all passed, 1 assertion/capture/request failed,
+2 usage or configuration error, 3 collection not trusted.
+
+JSON report shape:
+
+```json
+{
+  "collection": "petstore",
+  "summary": { "total": 2, "passed": 1, "failed": 1, "errors": 0, "duration_ms": 41.2 },
+  "results": [
+    {
+      "path": "pets/02-create.sh", "name": "Create pet", "outcome": "failed",
+      "response": { "status": 400, "time_ms": 3.1, "headers": [["content-type", "application/json"]], "body": "..." },
+      "assertions": [{ "label": "status 201", "passed": false, "message": "got 400" }],
+      "captures": [], "error": null, "warnings": []
+    }
+  ]
+}
+```
+
+## MCP server
+
+`sankh mcp` is a stdio MCP server (read and run only, it never edits files or
+grants trust). Add it to any MCP client:
+
+```json
+{ "mcpServers": { "sankh": { "command": "sankh", "args": ["mcp"] } } }
+```
+
+With no arguments it exposes the saved workspace (see `sankh workspace add`)
+plus Scratch; `sankh mcp PATH...` exposes only those folders.
+
+Tools:
+
+- `list_collections`: ids, names, roots, trust status.
+- `list_requests(collection, tags?)`: request tree.
+- `show_request(collection, path)`: file text and parsed annotations.
+- `list_environments(collection)`: environment names, default, variables (secrets masked).
+- `run(collection, path?, env?, folders?, tags?, bail?)`: runs requests and returns the JSON report. Refuses untrusted collections.
+
+## Docs
+
+- [Quickstart](https://sankh.dev/docs/quickstart)
+- [Collection format](https://sankh.dev/docs/format)
+- [Assertions and chaining](https://sankh.dev/docs/assertions)
+- [Running in CI](https://sankh.dev/docs/ci)
+- [Trust and secrets](https://sankh.dev/docs/trust-secrets)
+- [AI agents and MCP](https://sankh.dev/docs/ai-agents)

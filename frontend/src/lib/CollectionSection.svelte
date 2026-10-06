@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import Icon from './Icon.svelte';
+	import Menu, { type MenuItem } from './Menu.svelte';
 	import Tree from './Tree.svelte';
 	import type { CollectionInfo, TreeNode } from './types';
 
@@ -18,6 +20,7 @@
 		onnew: (folder: string) => void;
 		onenv: (env: string) => void;
 		onmanageenvs: () => void;
+		onclearcaptures: () => void;
 		onunlink: () => void;
 	}
 
@@ -35,6 +38,7 @@
 		onnew,
 		onenv,
 		onmanageenvs,
+		onclearcaptures,
 		onunlink
 	}: Props = $props();
 
@@ -43,6 +47,19 @@
 	let open = $state(untrack(() => localStorage.getItem(COLLAPSED_KEY(col.id)) === null));
 	let trusted = $derived(col.trust?.state === 'trusted');
 	let children = $derived(tree?.type === 'folder' ? tree.children : []);
+	let menu = $derived.by(() => {
+		const items: MenuItem[] = [];
+		if (!col.missing) {
+			items.push(
+				{ label: 'Manage environments…', icon: 'sliders', onselect: onmanageenvs },
+				{ label: 'Clear captures', icon: 'eraser', hint: env || undefined, onselect: onclearcaptures }
+			);
+		}
+		if (!col.scratch) {
+			items.push({ label: 'Unlink from workspace', icon: 'unlink', danger: true, onselect: onunlink });
+		}
+		return items;
+	});
 
 	function toggle() {
 		open = !open;
@@ -54,7 +71,7 @@
 <section class={['collection', col.missing && 'missing']}>
 	<div class="head">
 		<button class="toggle" onclick={toggle} aria-expanded={open} title={col.error ?? col.root}>
-			<span class="chev">{open ? '▾' : '▸'}</span>
+			<Icon name="chevron" size={12} class={open ? 'chev open' : 'chev'} />
 			<span class="name">{col.name}</span>
 			{#if col.missing}
 				<span class="badge bad">missing</span>
@@ -66,11 +83,21 @@
 		</button>
 		<span class="actions">
 			{#if !col.missing}
-				<button class="icon" title="New request" onclick={() => onnew('')}>+</button>
-				<button class="icon" title="Run collection" disabled={!trusted || busy} onclick={() => onrun('')}>▶</button>
+				<button class="icon-btn" title="New request" aria-label="New request in {col.name}" onclick={() => onnew('')}>
+					<Icon name="plus" />
+				</button>
+				<button
+					class="icon-btn run"
+					title="Run collection"
+					aria-label="Run {col.name}"
+					disabled={!trusted || busy}
+					onclick={() => onrun('')}
+				>
+					<Icon name="play" size={12} />
+				</button>
 			{/if}
-			{#if !col.scratch}
-				<button class="icon" title="Unlink from workspace (files stay on disk)" onclick={onunlink}>✕</button>
+			{#if menu.length}
+				<Menu title="More actions for {col.name}" items={menu} />
 			{/if}
 		</span>
 	</div>
@@ -80,16 +107,17 @@
 				value={env}
 				onchange={(e) => onenv(e.currentTarget.value)}
 				aria-label="Environment for {col.name}"
-				title="Environment for {col.name}"
+				title={env
+					? `environments/${env}.env, with local overrides (.env.local) on top`
+					: 'No environments yet: create one in Manage environments'}
+				disabled={envs.length === 0}
 			>
-				<option value="">no env</option>
 				{#each envs as e (e)}
 					<option value={e}>{e}</option>
+				{:else}
+					<option value="">No environments</option>
 				{/each}
 			</select>
-			<button class="manage" title="Manage environments and .env.local for {col.name}" onclick={onmanageenvs}>
-				Manage
-			</button>
 		</div>
 		{#each children as child (child.path)}
 			<Tree node={child} {selected} {running} {outcomes} depth={1} {onselect} {onrun} {onnew} />
@@ -103,7 +131,7 @@
 
 <style>
 	.collection {
-		padding-bottom: 6px;
+		padding-bottom: 8px;
 		border-bottom: 1px solid var(--border);
 	}
 	.collection.missing .name {
@@ -113,7 +141,8 @@
 	.head {
 		display: flex;
 		align-items: center;
-		padding: 4px 4px 2px 6px;
+		gap: 2px;
+		padding: 6px 6px 4px 6px;
 		position: sticky;
 		top: 0;
 		background: var(--panel);
@@ -121,74 +150,72 @@
 	}
 	.toggle {
 		flex: 1;
-		display: flex;
-		align-items: center;
+		justify-content: flex-start;
 		gap: 6px;
 		background: none;
 		border: none;
-		padding: 4px 2px;
+		padding: 0 4px;
 		text-align: left;
 		min-width: 0;
 	}
-	.chev {
-		width: 10px;
+	.toggle:hover:not(:disabled) {
+		background: none;
+	}
+	.toggle :global(.chev) {
 		color: var(--muted);
+		transition: transform 0.12s;
+	}
+	.toggle :global(.chev.open) {
+		transform: rotate(90deg);
 	}
 	.name {
 		font-weight: 700;
 		text-transform: uppercase;
 		font-size: 11px;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.06em;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.badge {
 		font-size: 10px;
-		padding: 0 5px;
-		border-radius: 4px;
-		border: 1px solid currentColor;
+		font-weight: 600;
+		padding: 1px 6px;
+		border-radius: 999px;
 		flex: none;
 	}
 	.badge.warn {
 		color: var(--warn);
+		background: var(--warn-bg);
 	}
 	.badge.bad {
 		color: var(--fail);
+		background: var(--fail-bg);
 	}
 	.actions {
 		display: flex;
-		gap: 2px;
-		opacity: 0.35;
+		align-items: center;
+		gap: 1px;
+		opacity: 0.5;
+		transition: opacity 0.12s;
 	}
 	.head:hover .actions,
 	.head:focus-within .actions {
 		opacity: 1;
 	}
-	.icon {
-		padding: 0 6px;
-		font-size: 11px;
-		line-height: 18px;
-		background: none;
+	.run:hover:not(:disabled) {
+		color: var(--ok);
 	}
 	.env {
-		display: flex;
-		gap: 4px;
-		padding: 0 10px 4px 22px;
+		padding: 0 10px 6px 26px;
 	}
 	.env select {
-		flex: 1;
-		min-width: 0;
-		padding: 2px 6px;
+		width: 100%;
 		font-size: 12px;
-	}
-	.manage {
-		padding: 2px 6px;
-		font-size: 11px;
 	}
 	.empty {
 		margin: 2px 0 4px;
-		padding-left: 24px;
+		padding-left: 28px;
 		color: var(--muted);
 		font-size: 12px;
 	}

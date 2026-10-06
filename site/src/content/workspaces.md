@@ -40,7 +40,7 @@ requests without an existing folder:
 - It is trusted automatically, because only you write to it.
 - It cannot be unlinked.
 
-When a request is worth keeping, use **Copy to...** in the editor to copy it
+When a request is worth keeping, use **Copy to collection…** in the editor's **⋯** menu to copy it
 into a real collection. Existing files are never overwritten.
 
 ## Rules

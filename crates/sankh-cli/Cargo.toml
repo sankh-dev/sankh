@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 sankh-core.workspace = true
 sankh-server.workspace = true
+sankh-mcp.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true

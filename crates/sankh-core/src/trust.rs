@@ -3,8 +3,10 @@
 //!
 //! The store lives at `~/.config/sankh/trust.toml` (or `$SANKH_CONFIG_DIR`),
 //! keyed by canonical folder path. When the folder is in a git repository the
-//! HEAD commit is recorded, and trust lapses when HEAD changes (e.g. after a
-//! `git pull`) so new code is reviewed before it runs.
+//! HEAD commit is recorded. When HEAD moves (a `git pull`, checking out a
+//! teammate's branch) trust carries forward only if no file under the trusted
+//! folder differs between the two commits; otherwise it lapses and the changed
+//! files are listed so they can be reviewed before anything runs.
 
 use crate::collection::Collection;
 use serde::{Deserialize, Serialize};
@@ -31,11 +33,13 @@ pub enum TrustStatus {
         path: String,
     },
     Untrusted,
-    /// Trusted before, but git HEAD has moved since.
+    /// Trusted before, but files under the folder changed since. `changed`
+    /// is empty when git could not compute the diff.
     Changed {
         path: String,
         trusted_head: String,
         current_head: String,
+        changed: Vec<String>,
     },
 }
 
@@ -52,12 +56,14 @@ pub enum TrustError {
     )]
     Untrusted(String),
     #[error(
-        "{path} changed since it was trusted (git HEAD {old} -> {new}). Review the changes, then run `sankh trust {path}`"
+        "{path} changed since it was trusted (git {old} -> {new}{}). Review the changes, then run `sankh trust {path}`",
+        changed_summary(changed)
     )]
     Changed {
         path: String,
         old: String,
         new: String,
+        changed: Vec<String>,
     },
     #[error("trust store {path}: {message}")]
     Store { path: String, message: String },
@@ -95,10 +101,14 @@ impl TrustStore {
             if let Some(entry) = self.folders.get(&key) {
                 let current = git_head(dir);
                 return match (&entry.head, current) {
-                    (Some(old), Some(new)) if *old != new => TrustStatus::Changed {
-                        path: key,
-                        trusted_head: old.clone(),
-                        current_head: new,
+                    (Some(old), Some(new)) if *old != new => match changed_files(dir, old, &new) {
+                        Some(files) if files.is_empty() => TrustStatus::Trusted { path: key },
+                        files => TrustStatus::Changed {
+                            path: key,
+                            trusted_head: old.clone(),
+                            current_head: new,
+                            changed: files.unwrap_or_default(),
+                        },
                     },
                     _ => TrustStatus::Trusted { path: key },
                 };
@@ -155,17 +165,67 @@ pub fn ensure(collection: &Collection, override_trust: bool) -> Result<Trusted, 
         TrustStatus::Changed {
             trusted_head,
             current_head,
+            changed,
             ..
         } => Err(TrustError::Changed {
             path: shown,
             old: short(&trusted_head),
             new: short(&current_head),
+            changed,
         }),
     }
 }
 
 fn short(sha: &str) -> String {
     sha.chars().take(8).collect()
+}
+
+/// `", changed: a.sh, b.sh"` for error messages, capped so a large diff stays readable.
+pub fn changed_summary(changed: &[String]) -> String {
+    const SHOWN: usize = 10;
+    if changed.is_empty() {
+        return String::new();
+    }
+    let mut out = format!(
+        ", changed: {}",
+        changed[..changed.len().min(SHOWN)].join(", ")
+    );
+    if changed.len() > SHOWN {
+        out.push_str(&format!(" and {} more", changed.len() - SHOWN));
+    }
+    out
+}
+
+/// Files under `dir` (relative to it) that differ between commits `old` and
+/// `new`. `None` when git is unavailable or a commit is unknown, which callers
+/// must treat as changed.
+pub fn changed_files(dir: &Path, old: &str, new: &str) -> Option<Vec<String>> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "diff",
+            "--name-only",
+            "--relative",
+            "--no-renames",
+            old,
+            new,
+            "--",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
 }
 
 /// Current git HEAD commit for the repository containing `dir`, if any.
@@ -235,6 +295,54 @@ mod tests {
         ));
         assert!(store.revoke(&root.join("api")));
         assert_eq!(store.status(&root.join("api")), TrustStatus::Untrusted);
+    }
+
+    fn git(root: &Path, args: &[&str]) -> bool {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+
+    #[test]
+    fn trust_survives_commits_outside_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        if !git(root, &["init", "-q"]) {
+            return;
+        }
+        std::fs::create_dir_all(root.join("api")).unwrap();
+        std::fs::write(root.join("api/01-get.sh"), "curl $BASE\n").unwrap();
+        std::fs::write(root.join("README.md"), "hi\n").unwrap();
+        assert!(git(root, &["add", "."]));
+        assert!(git(root, &["commit", "-qm", "one"]));
+
+        let mut store = TrustStore::default();
+        store.trust(&root.join("api")).unwrap();
+
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        assert!(git(root, &["commit", "-qam", "docs"]));
+        assert!(matches!(
+            store.status(&root.join("api")),
+            TrustStatus::Trusted { .. }
+        ));
+
+        std::fs::write(root.join("api/01-get.sh"), "rm -rf ~\n").unwrap();
+        assert!(git(root, &["commit", "-qam", "evil"]));
+        match store.status(&root.join("api")) {
+            TrustStatus::Changed { changed, .. } => assert_eq!(changed, vec!["01-get.sh"]),
+            other => panic!("expected Changed, got {other:?}"),
+        }
     }
 
     #[test]

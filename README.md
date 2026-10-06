@@ -33,7 +33,7 @@ sh pets/02-create.sh
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.4.0 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.5.0 sh
 ```
 
 Or build from source (needs Rust and Node 22):
@@ -118,10 +118,10 @@ one or more paths, it opens just those folders for this session.
 
 The UI has a file tree, form and raw (CodeMirror) editors, an environment
 picker, live results for single requests and whole folders, and import from
-curl or a Postman export (**Import Postman...**). Values captured in the UI (e.g. a login token) are kept per environment
-for the session, so you can run requests one at a time; **Clear captures**
-forgets them. **Manage** next to the environment picker edits
-`environments/*.env` and `.env.local` (create, rename, delete, set default).
+curl or a Postman export (**Add collection > Import from Postman…** in the header). Values captured in the UI (e.g. a login token) are kept per environment
+for the session, so you can run requests one at a time; **Clear captures** in
+a collection's **⋯** menu forgets them. **Manage environments…** in the same
+menu edits `environments/*.env` and `.env.local` (create, rename, delete, set default).
 
 Security:
 
@@ -154,7 +154,7 @@ sankh workspace remove ID|PATH       # unlink (alias: unlink); files stay on dis
 - **Scratch** is a built-in collection that is always listed first, for
   trying requests without an existing folder. It lives in
   `~/.local/share/sankh/scratch` (or `$SANKH_DATA_DIR/scratch`), is trusted
-  automatically and cannot be unlinked. Use **Copy to…** in the editor to move
+  automatically and cannot be unlinked. Use **Copy to collection…** in the editor's **⋯** menu to move
   a request from Scratch into a real collection; existing files are never
   overwritten.
 - A missing folder stays in the list, marked missing, until you unlink it.
@@ -182,9 +182,33 @@ is kept as comments in the file and listed in the import report, because
 Sankh does not run JavaScript. Import never writes into a non-empty folder
 without `--force`.
 
-The web UI and desktop app can do the same from **Import Postman...**: pick
+The web UI and desktop app can do the same from **Add collection > Import from Postman…**: pick
 the export, review the import report, choose a destination, and the new
 collection is added to the workspace.
+
+## AI agents and MCP
+
+Agents with a shell can use `sankh list --json` and
+`sankh run --report json --report-file -` directly. Point them at
+[sankh.dev/llms.txt](https://sankh.dev/llms.txt) or copy
+[`skills/sankh`](skills/sankh/SKILL.md) into `.cursor/skills/` or
+`.claude/skills/` to teach them the format and the trust rules.
+
+Any MCP client can use the built-in stdio server:
+
+```json
+{ "mcpServers": { "sankh": { "command": "sankh", "args": ["mcp"] } } }
+```
+
+```
+sankh mcp [PATH]...
+```
+
+Without a path it exposes the saved workspace plus Scratch; with paths, only
+those folders. Tools: `list_collections`, `list_requests`, `show_request`,
+`list_environments` and `run`. It is read and run only: it never edits files
+and never grants trust, so an untrusted collection is refused until you run
+`sankh trust`. Secrets are masked as in `sankh run`.
 
 ## Collections
 
@@ -209,8 +233,10 @@ The full format, including every annotation, is in [docs/format.md](docs/format.
 
 Request files are shell scripts, so a cloned collection never runs until you
 trust it. Trust is stored in `~/.config/sankh/trust.toml` (or
-`$SANKH_CONFIG_DIR`). In a git repository the HEAD commit is recorded, and
-trust lapses when HEAD changes, so pulled changes are reviewed before they run.
+`$SANKH_CONFIG_DIR`). In a git repository the HEAD commit is recorded. When
+HEAD moves, trust carries forward if nothing under the trusted folder changed;
+otherwise it lapses and lists the changed files, so pulled changes are reviewed
+before they run.
 
 ## Secrets
 

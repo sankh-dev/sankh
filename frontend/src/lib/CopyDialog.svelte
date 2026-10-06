@@ -60,25 +60,9 @@
 </div>
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: #0008;
-		display: grid;
-		place-items: center;
-		z-index: 10;
-	}
 	.dialog {
 		width: min(480px, 92vw);
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
 	}
-	h3,
 	p {
 		margin: 0;
 	}
@@ -98,10 +82,5 @@
 	}
 	.error {
 		color: var(--fail);
-	}
-	.buttons {
-		display: flex;
-		justify-content: flex-end;
-		gap: 8px;
 	}
 </style>

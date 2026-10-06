@@ -13,7 +13,13 @@ export type TreeNode =
 export type TrustStatus =
 	| { state: 'trusted'; path: string }
 	| { state: 'untrusted' }
-	| { state: 'changed'; path: string; trusted_head: string; current_head: string };
+	| {
+			state: 'changed';
+			path: string;
+			trusted_head: string;
+			current_head: string;
+			changed: string[];
+	  };
 
 export interface CollectionInfo {
 	id: string;

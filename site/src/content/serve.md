@@ -13,14 +13,14 @@ session. Prefer a native window? The [desktop app](desktop.md) is the same UI.
 The UI has a file tree for each collection, form and raw (CodeMirror)
 editors, an environment picker per collection, live results for single
 requests and whole folders, and import from curl or from a Postman export
-(see [Import from Postman](import.md#from-the-app)). **Add folder** puts another
-collection next to the others; **Copy to...** copies a request between
-collections. The server, not the browser, executes the requests, so there are
+(see [Import from Postman](import.md#from-the-app)). **Add collection > Open
+folder…** in the header puts another collection next to the others; **Copy to
+collection…** in the editor's **⋯** menu copies a request between collections. The server, not the browser, executes the requests, so there are
 no CORS workarounds and the results match `sankh run` exactly.
 
 Values captured in the UI (for example a login token) are kept per collection
 and environment for the session, so you can run requests one at a time. **Clear captures**
-forgets them.
+in the collection's **⋯** menu forgets them for the selected environment.
 
 Edits made in the UI are written back to the same `.sh` files, so a change in
 the browser is a normal diff in git. Changes made on disk (in your editor, or

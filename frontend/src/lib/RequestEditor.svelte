@@ -2,6 +2,8 @@
 	import { untrack } from 'svelte';
 	import CodeEditor from './CodeEditor.svelte';
 	import FormView from './FormView.svelte';
+	import Icon from './Icon.svelte';
+	import Menu, { type MenuItem } from './Menu.svelte';
 	import { api } from './api';
 	import type { Diagnostic, RequestDoc, RequestForm } from './types';
 
@@ -33,6 +35,18 @@
 	let saving = $state(false);
 	let notice = $state<string | null>(null);
 	let copied = $state(false);
+
+	let menu = $derived<MenuItem[]>([
+		{ label: 'Copy as curl', icon: 'terminal', onselect: copyCurl },
+		{
+			label: 'Copy to collection…',
+			icon: 'copy',
+			disabled: !oncopy,
+			hint: oncopy ? undefined : 'no other collection',
+			onselect: () => oncopy?.()
+		},
+		{ label: 'Delete file', icon: 'trash', danger: true, onselect: ondelete }
+	]);
 
 	async function currentContent(): Promise<string> {
 		if (mode === 'form' && form) {
@@ -105,15 +119,14 @@
 			<span class="col">{collection}</span> / {doc.path}{dirty ? ' •' : ''}
 		</span>
 		<span class="spacer"></span>
-		<button onclick={copyCurl} title="Copy the curl command">{copied ? 'Copied' : 'Copy curl'}</button>
-		{#if oncopy}
-			<button onclick={oncopy} title="Copy this request file into another collection">Copy to…</button>
-		{/if}
-		<button onclick={ondelete} title="Delete file">Delete</button>
-		<button onclick={save} disabled={saving || !dirty} title="Save (Ctrl+S)">Save</button>
-		<button class="primary" onclick={saveAndRun} disabled={!canRun || running} title="Run (Ctrl+Enter)">
-			{running ? 'Running…' : 'Run'}
+		{#if copied}<span class="copied"><Icon name="check" size={12} />Copied</span>{/if}
+		<button onclick={save} disabled={saving || !dirty} title="Save (Ctrl+S)">
+			<Icon name="save" size={13} />Save
 		</button>
+		<button class="primary" onclick={saveAndRun} disabled={!canRun || running} title="Run (Ctrl+Enter)">
+			<Icon name="play" size={11} />{running ? 'Running…' : 'Run'}
+		</button>
+		<Menu title="More actions for this request" items={menu} />
 	</div>
 
 	{#if notice}
@@ -150,7 +163,8 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 6px 10px;
+		height: 44px;
+		padding: 0 10px;
 		border-bottom: 1px solid var(--border);
 		background: var(--panel);
 	}
@@ -160,20 +174,36 @@
 	}
 	.tabs {
 		display: flex;
+		padding: 2px;
+		gap: 2px;
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
 	}
 	.tabs button {
-		border-radius: 0;
+		min-height: 22px;
+		padding: 0 10px;
+		font-size: 12px;
+		background: none;
+		border-color: transparent;
+		color: var(--muted);
 	}
-	.tabs button:first-child {
-		border-radius: 6px 0 0 6px;
+	.tabs button:hover:not(:disabled) {
+		background: var(--panel-2);
+		border-color: transparent;
+		color: var(--text);
 	}
-	.tabs button:last-child {
-		border-radius: 0 6px 6px 0;
-		border-left: none;
+	.tabs .active,
+	.tabs .active:hover:not(:disabled) {
+		background: var(--panel-3);
+		color: var(--text);
 	}
-	.tabs .active {
-		background: var(--accent-strong);
-		color: #fff;
+	.copied {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--ok);
+		font-size: 12px;
 	}
 	.path {
 		color: var(--muted);
@@ -189,12 +219,14 @@
 	}
 	.notice {
 		padding: 6px 12px;
-		background: #3a2f12;
+		background: var(--warn-bg);
+		border-bottom: 1px solid var(--warn-border);
 		color: #f8e3a8;
 		font-size: 12px;
 	}
 	.notice.muted {
 		background: var(--panel-2);
+		border-bottom-color: var(--border);
 		color: var(--muted);
 	}
 	.body {

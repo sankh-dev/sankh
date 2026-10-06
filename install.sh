@@ -2,7 +2,7 @@
 # Sankh installer: curl -fsSL https://sankh.dev/install.sh | sh
 #
 # Environment:
-#   SANKH_VERSION      version to install, e.g. 0.4.0 (default: latest release)
+#   SANKH_VERSION      version to install, e.g. 0.5.0 (default: latest release)
 #   SANKH_INSTALL_DIR  install directory (default: ~/.local/bin)
 #
 # Downloads the release archive for this platform from GitHub, verifies its

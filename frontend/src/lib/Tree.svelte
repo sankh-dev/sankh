@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import Tree from './Tree.svelte';
 	import type { TreeNode } from './types';
 
@@ -20,12 +21,16 @@
 {#if node.type === 'folder'}
 	<div class="row folder" style:--depth={depth}>
 		<button class="toggle" onclick={() => (open = !open)} aria-expanded={open}>
-			<span class="chev">{open ? '▾' : '▸'}</span>
+			<Icon name="chevron" size={12} class={open ? 'chev open' : 'chev'} />
 			<span class="label">{node.name}</span>
 		</button>
 		<span class="actions">
-			<button class="icon" title="New request here" onclick={() => onnew(node.path)}>+</button>
-			<button class="icon" title="Run folder" onclick={() => onrun(node.path)}>▶</button>
+			<button class="icon-btn" title="New request here" aria-label="New request in {node.name}" onclick={() => onnew(node.path)}>
+				<Icon name="plus" size={13} />
+			</button>
+			<button class="icon-btn run" title="Run folder" aria-label="Run {node.name}" onclick={() => onrun(node.path)}>
+				<Icon name="play" size={11} />
+			</button>
 		</span>
 	</div>
 	{#if open}
@@ -39,17 +44,19 @@
 		<button class="toggle" onclick={() => onselect(node.path)} title={node.path}>
 			<span class="method method-{method}">{method}</span>
 			<span class="label">{node.name}</span>
+			{#if node.errors > 0}
+				<span class="err" title="{node.errors} annotation error(s)"><Icon name="alert" size={12} /></span>
+			{/if}
 			{#if running === node.path}
 				<span class="dot running" title="running"></span>
 			{:else if outcomes[node.path]}
 				<span class="dot {outcomes[node.path]}" title={outcomes[node.path]}></span>
 			{/if}
-			{#if node.errors > 0}
-				<span class="err" title="{node.errors} annotation error(s)">!</span>
-			{/if}
 		</button>
 		<span class="actions">
-			<button class="icon" title="Run" onclick={() => onrun(node.path)}>▶</button>
+			<button class="icon-btn run" title="Run" aria-label="Run {node.name}" onclick={() => onrun(node.path)}>
+				<Icon name="play" size={11} />
+			</button>
 		</span>
 	</div>
 {/if}
@@ -58,70 +65,87 @@
 	.row {
 		display: flex;
 		align-items: center;
-		padding-left: calc(var(--depth) * 12px + 6px);
-		border-radius: 6px;
-		margin: 1px 4px;
+		padding-left: calc(var(--depth) * 12px + 4px);
+		padding-right: 4px;
+		border-radius: var(--radius-sm);
+		margin: 1px 6px;
+		transition: background-color 0.1s;
 	}
 	.row:hover {
 		background: var(--panel-2);
 	}
 	.row.selected {
-		background: #1b3a31;
+		background: var(--selected);
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.toggle {
 		flex: 1;
-		display: flex;
-		align-items: center;
+		justify-content: flex-start;
 		gap: 6px;
+		min-height: 26px;
 		background: none;
 		border: none;
-		padding: 4px 2px;
+		padding: 0 4px;
 		text-align: left;
 		min-width: 0;
+	}
+	.toggle:hover:not(:disabled) {
+		background: none;
+	}
+	.toggle :global(.chev) {
+		color: var(--muted);
+		transition: transform 0.12s;
+	}
+	.toggle :global(.chev.open) {
+		transform: rotate(90deg);
 	}
 	.folder .label {
 		font-weight: 600;
 	}
 	.label {
+		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.chev {
-		width: 10px;
-		color: var(--muted);
-	}
 	.method {
-		width: 38px;
 		flex: none;
+		width: 44px;
+		padding: 3px 0;
+		text-align: center;
+		border-radius: 4px;
+		background: color-mix(in srgb, currentColor 13%, transparent);
 	}
 	.actions {
-		display: none;
-		gap: 2px;
-		padding-right: 4px;
-	}
-	.row:hover .actions {
 		display: flex;
+		gap: 1px;
+		width: 0;
+		overflow: hidden;
+		opacity: 0;
+		transition: opacity 0.12s;
 	}
-	.icon {
-		padding: 0 6px;
-		font-size: 11px;
-		line-height: 18px;
-		background: none;
+	.row:hover .actions,
+	.row:focus-within .actions {
+		width: auto;
+		opacity: 1;
+	}
+	.run:hover:not(:disabled) {
+		color: var(--ok);
 	}
 	.dot {
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
 		flex: none;
-		margin-left: auto;
 	}
 	.dot.passed {
 		background: var(--ok);
+		box-shadow: 0 0 0 3px var(--ok-bg);
 	}
 	.dot.failed,
 	.dot.error {
 		background: var(--fail);
+		box-shadow: 0 0 0 3px var(--fail-bg);
 	}
 	.dot.running {
 		background: var(--warn);
@@ -129,7 +153,7 @@
 	}
 	.err {
 		color: var(--fail);
-		font-weight: 700;
+		display: inline-flex;
 	}
 	@keyframes pulse {
 		to {

@@ -49,6 +49,11 @@ export const docPages: DocPage[] = [
 		slug: 'trust-secrets',
 		title: 'Trust and secrets',
 		description: 'How Sankh decides what may run and what gets redacted.'
+	},
+	{
+		slug: 'ai-agents',
+		title: 'AI agents and MCP',
+		description: 'llms.txt, the agent skill, and the sankh mcp server.'
 	}
 ];
 

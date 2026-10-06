@@ -64,6 +64,11 @@ enum Command {
     /// Convert a collection from another API client into a Sankh folder
     #[command(subcommand)]
     Import(import::Source),
+    /// Serve collections to AI agents over MCP (stdio); read and run only
+    Mcp {
+        /// Collection folders to expose; without any, the saved workspace
+        paths: Vec<PathBuf>,
+    },
 }
 
 #[derive(clap::Args)]
@@ -134,6 +139,7 @@ fn main() -> ExitCode {
         Command::Serve(args) => cmd_serve(args),
         Command::Import(source) => import::run(source).map(|_| ExitCode::SUCCESS),
         Command::Workspace(action) => workspace::run(action).map(|_| ExitCode::SUCCESS),
+        Command::Mcp { paths } => cmd_mcp(paths),
     };
     match result {
         Ok(code) => code,
@@ -324,5 +330,17 @@ fn cmd_serve(args: ServeArgs) -> Result<ExitCode> {
     };
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(sankh_server::serve(config))?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Stdout carries the protocol, so nothing else may print there.
+fn cmd_mcp(paths: Vec<PathBuf>) -> Result<ExitCode> {
+    let source = if paths.is_empty() {
+        sankh_mcp::WorkspaceSource::Saved
+    } else {
+        sankh_mcp::WorkspaceSource::Session(paths)
+    };
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(sankh_mcp::serve_stdio(source))?;
     Ok(ExitCode::SUCCESS)
 }

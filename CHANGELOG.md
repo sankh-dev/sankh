@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.5.0] - 2026-10-06
+
+### Added
+
+- **`sankh mcp`: an MCP server for AI agents.** Add
+  `{"command": "sankh", "args": ["mcp"]}` to any MCP client to expose the
+  saved workspace (or `sankh mcp PATH...` for just those folders) over stdio.
+  Tools: `list_collections`, `list_requests`, `show_request`,
+  `list_environments` and `run`. It is read and run only: it never edits
+  files and never grants trust (`SANKH_TRUST` does not apply), secrets are
+  masked as in `sankh run`, and response bodies are truncated to 16 KB.
+- **Duplicate environment.** In **Manage environments…**, **Duplicate**
+  creates a copy of the selected environment's variables under a suggested
+  name (`staging-copy`, then `staging-copy-2`, …) that you can edit first.
+
+### Changed
+
+- **Trust only lapses when the collection changes.** Moving git HEAD (a pull,
+  or checking out a teammate's branch) no longer revokes trust if no file
+  under the trusted folder differs from the trusted commit. When files did
+  change, the error, the app banner and the MCP message list them. If git
+  can't compute the diff, trust still lapses.
+- **Refreshed app UI with one place for each action.** The header now has a
+  single **Add collection** menu (Open folder…, Import from Postman…); the
+  duplicate sidebar buttons and the header's **New request** and **Clear
+  captures** are gone. Each collection has **+** (new request), **Run** and a
+  **⋯** menu with **Manage environments…**, **Clear captures** and **Unlink**,
+  so these always act on that collection. The editor keeps **Save** and
+  **Run**; **Copy as curl**, **Copy to collection…** and **Delete file** moved
+  into its **⋯** menu. Icons, menus with keyboard navigation, focus rings,
+  status pills and a run progress bar replace the text glyphs.
+- **Clearer environment picker.** The dropdown lists only real environments;
+  the "no env" choice is gone (with a default set, it ran the default anyway),
+  and the default is simply selected first. In **Manage environments…**,
+  `.env.local` sits in its own **Local overrides** section, which applies on
+  top of whichever environment is selected.
+
+### Docs
+
+- New **AI agents and MCP** page, [`llms.txt`](https://sankh.dev/llms.txt)
+  for language models, and an agent skill in `skills/sankh/SKILL.md`.
+
 ## [0.4.0] - 2026-10-05
 
 ### Added

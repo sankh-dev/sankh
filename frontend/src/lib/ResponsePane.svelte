@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import type { RequestResult } from './types';
 
 	interface Props {
@@ -26,13 +27,17 @@
 	function statusClass(status: number) {
 		if (status < 300) return 'ok';
 		if (status < 400) return 'redirect';
+		if (status < 500) return 'client';
 		return 'bad';
 	}
 </script>
 
 <div class="pane">
 	{#if !result}
-		<div class="empty">Run a request to see the response.</div>
+		<div class="empty">
+			<Icon name="play" size={20} />
+			<p>Run a request to see the response.</p>
+		</div>
 	{:else}
 		<div class="summary">
 			<span class="outcome {result.outcome}">{result.outcome}</span>
@@ -61,7 +66,7 @@
 					<li class="capture"><span class="mark">→</span><code>{c.name}</code> = <code>{c.value}</code></li>
 				{/each}
 				{#each result.warnings as w (w)}
-					<li class="warn"><span class="mark">!</span>{w}</li>
+					<li class="warn"><span class="mark"><Icon name="alert" size={12} /></span>{w}</li>
 				{/each}
 			</ul>
 		{/if}
@@ -105,13 +110,22 @@
 	}
 	.empty {
 		margin: auto;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
 		color: var(--muted);
+		opacity: 0.8;
+	}
+	.empty p {
+		margin: 0;
 	}
 	.summary {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 8px 12px;
+		height: 44px;
+		padding: 0 12px;
 		border-bottom: 1px solid var(--border);
 		background: var(--panel);
 		min-width: 0;
@@ -119,25 +133,32 @@
 	.outcome {
 		text-transform: uppercase;
 		font: 700 10px/1 var(--sans);
-		padding: 4px 6px;
-		border-radius: 4px;
+		letter-spacing: 0.04em;
+		padding: 5px 8px;
+		border-radius: 999px;
 	}
 	.outcome.passed {
-		background: #12402e;
+		background: var(--ok-bg);
 		color: var(--ok);
 	}
 	.outcome.failed,
 	.outcome.error {
-		background: #4a1c1c;
+		background: var(--fail-bg);
 		color: var(--fail);
 	}
 	.status {
-		font: 700 14px var(--mono);
+		font: 700 12px/1 var(--mono);
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, currentColor 14%, transparent);
 	}
 	.status.ok {
 		color: var(--ok);
 	}
 	.status.redirect {
+		color: var(--info);
+	}
+	.status.client {
 		color: var(--warn);
 	}
 	.status.bad {
@@ -177,6 +198,7 @@
 		width: 12px;
 		flex: none;
 		font-weight: 700;
+		align-self: center;
 	}
 	.pass .mark {
 		color: var(--ok);
@@ -204,13 +226,20 @@
 		background: none;
 		color: var(--muted);
 	}
+	.tabs button:hover:not(:disabled) {
+		background: none;
+		color: var(--text);
+	}
 	.tabs .active {
 		color: var(--text);
 		border-bottom-color: var(--accent);
 	}
 	.count {
 		color: var(--muted);
-		font-size: 11px;
+		font-size: 10px;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: var(--panel-3);
 	}
 	.content {
 		flex: 1;

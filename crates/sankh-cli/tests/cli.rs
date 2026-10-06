@@ -93,6 +93,21 @@ fn untrusted_folder_never_runs() {
 }
 
 #[test]
+fn mcp_help_and_missing_folder() {
+    let cfg = tempfile::tempdir().unwrap();
+    sankh(cfg.path())
+        .args(["mcp", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("MCP"));
+    sankh(cfg.path())
+        .args(["mcp", "/definitely/not/here"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
 fn failing_assertion_exits_non_zero() {
     let base = petstore::spawn();
     let cfg = tempfile::tempdir().unwrap();

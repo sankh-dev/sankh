@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from './api';
+	import Icon from './Icon.svelte';
 	import type { EnvFileVar } from './types';
 
 	interface Props {
@@ -33,6 +34,7 @@
 	let original = $state('');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
+	let naming = $state<{ mode: 'create' | 'rename'; value: string; copy: boolean } | null>(null);
 	let nextId = 0;
 
 	let isLocal = $derived(target === LOCAL);
@@ -51,6 +53,13 @@
 		return out;
 	});
 	let invalid = $derived(Object.keys(problems).length > 0);
+	let nameError = $derived.by(() => {
+		const name = naming?.value.trim();
+		if (!naming || !name) return null;
+		if (!ENV_NAME.test(name)) return 'Use lowercase letters, digits, ".", "_" and "-"';
+		if (envs.includes(name) && !(naming.mode === 'rename' && name === target)) return `"${name}" already exists`;
+		return null;
+	});
 
 	function message(e: unknown) {
 		return e instanceof Error ? e.message : String(e);
@@ -90,6 +99,7 @@
 
 	async function pick(next: string) {
 		if (next === target || !confirmDiscard()) return;
+		if (naming?.mode === 'rename') naming = null;
 		await loadTarget(next);
 	}
 
@@ -136,42 +146,64 @@
 		}
 	}
 
-	function askName(prompt: string, initial = '') {
-		const name = window.prompt(prompt, initial)?.trim();
-		if (!name) return null;
-		if (!ENV_NAME.test(name)) {
-			error = `"${name}" is not a valid name: use lowercase letters, digits, ".", "_" and "-"`;
-			return null;
-		}
+	function startCreate() {
+		if (!confirmDiscard()) return;
+		naming = { mode: 'create', value: '', copy: false };
+	}
+
+	function uniqueName(base: string) {
+		let name = base;
+		for (let i = 2; envs.includes(name); i++) name = `${base}-${i}`;
 		return name;
 	}
 
-	async function create() {
-		if (!confirmDiscard()) return;
-		const name = askName('New environment name');
-		if (!name) return;
-		const copyFrom = !isLocal && confirm(`Copy the variables of "${target}"?`) ? target : undefined;
-		await act(
-			async () => {
-				await api.createEnv(cid, name, copyFrom);
-				return null;
-			},
-			() => name
-		);
+	function startDuplicate() {
+		if (isLocal || !confirmDiscard()) return;
+		naming = { mode: 'create', value: uniqueName(`${target}-copy`), copy: true };
 	}
 
-	async function rename() {
+	function startRename() {
 		if (isLocal || !confirmDiscard()) return;
-		const from = target;
-		const to = askName(`Rename "${from}" to`, from);
-		if (!to || to === from) return;
-		await act(
-			async () => {
-				await api.renameEnv(cid, from, to);
-				return { type: 'renamed', from, to };
-			},
-			() => to
-		);
+		naming = { mode: 'rename', value: target, copy: false };
+	}
+
+	async function submitName(event: SubmitEvent) {
+		event.preventDefault();
+		if (!naming || nameError) return;
+		const { mode, copy } = naming;
+		const name = naming.value.trim();
+		if (!name) return;
+		naming = null;
+		if (mode === 'create') {
+			const copyFrom = copy && !isLocal ? target : undefined;
+			await act(
+				async () => {
+					await api.createEnv(cid, name, copyFrom);
+					return null;
+				},
+				() => name
+			);
+		} else if (name !== target) {
+			const from = target;
+			await act(
+				async () => {
+					await api.renameEnv(cid, from, name);
+					return { type: 'renamed', from, to: name };
+				},
+				() => name
+			);
+		}
+	}
+
+	function nameKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape') return;
+		e.stopPropagation();
+		naming = null;
+	}
+
+	function focusAndSelect(node: HTMLInputElement) {
+		node.focus();
+		node.select();
 	}
 
 	async function remove() {
@@ -217,34 +249,88 @@
 		<h3>Environments <span class="muted">· {collection}</span></h3>
 		<div class="body">
 			<nav aria-label="Environment files">
+				<p class="group">Environments</p>
 				{#each envs as e (e)}
 					<button class={['item', target === e && 'active']} onclick={() => pick(e)}>
 						<span class="mono">{e}</span>
 						{#if defaultEnv === e}<span class="badge">default</span>{/if}
 					</button>
+				{:else}
+					<p class="muted small none">None yet.</p>
 				{/each}
+				{#if naming?.mode === 'create'}
+					<form class="name-form" onsubmit={submitName}>
+						<input
+							class={['mono', nameError && 'bad']}
+							bind:value={naming.value}
+							placeholder="e.g. staging"
+							aria-label="New environment name"
+							onkeydown={nameKeydown}
+							{@attach focusAndSelect}
+						/>
+						{#if !isLocal && target}
+							<label class="check small">
+								<input type="checkbox" bind:checked={naming.copy} />
+								Copy variables from <span class="mono">{target}</span>
+							</label>
+						{/if}
+						{#if nameError}<p class="problem">{nameError}</p>{/if}
+						<div class="name-buttons">
+							<button type="button" onclick={() => (naming = null)}>Cancel</button>
+							<button type="submit" class="primary" disabled={busy || !naming.value.trim() || !!nameError}>
+								Create
+							</button>
+						</div>
+					</form>
+				{:else}
+					<button class="new" onclick={startCreate} disabled={busy}><Icon name="plus" size={12} />New environment</button>
+				{/if}
+
+				<p class="group local-group">Local overrides</p>
 				<button class={['item', isLocal && 'active']} onclick={() => pick(LOCAL)}>
 					<span class="mono">.env.local</span>
-					<span class="muted small">local overrides</span>
 				</button>
-				<button class="new" onclick={create} disabled={busy}>+ New environment</button>
+				<p class="muted small note">Applied on top of whichever environment is selected. Gitignored.</p>
 			</nav>
 
 			<section class="vars">
-				<div class="toolbar">
-					<span class="mono path">{isLocal ? '.env.local' : `environments/${target}.env`}</span>
-					{#if !isLocal}
-						<button onclick={makeDefault} disabled={busy}>
-							{defaultEnv === target ? 'Unset default' : 'Make default'}
+				{#if naming?.mode === 'rename'}
+					<form class="toolbar" onsubmit={submitName}>
+						<span class="mono muted">environments/</span>
+						<input
+							class={['mono', 'rename', nameError && 'bad']}
+							bind:value={naming.value}
+							aria-label="New name for {target}"
+							onkeydown={nameKeydown}
+							{@attach focusAndSelect}
+						/>
+						<span class="mono muted">.env</span>
+						<span class="spacer"></span>
+						<button type="button" onclick={() => (naming = null)}>Cancel</button>
+						<button type="submit" class="primary" disabled={busy || !naming.value.trim() || !!nameError}>
+							Rename
 						</button>
-						<button onclick={rename} disabled={busy}>Rename</button>
-						<button class="danger" onclick={remove} disabled={busy}>Delete</button>
-					{/if}
-				</div>
+					</form>
+					{#if nameError}<p class="problem">{nameError}</p>{/if}
+				{:else}
+					<div class="toolbar">
+						<span class="mono path">
+							{#if isLocal}<span class="title">Local overrides</span> .env.local{:else}environments/{target}.env{/if}
+						</span>
+						{#if !isLocal}
+							<button onclick={makeDefault} disabled={busy}>
+								{defaultEnv === target ? 'Unset default' : 'Make default'}
+							</button>
+							<button onclick={startRename} disabled={busy}>Rename</button>
+							<button onclick={startDuplicate} disabled={busy}>Duplicate</button>
+							<button class="danger" onclick={remove} disabled={busy}>Delete</button>
+						{/if}
+					</div>
+				{/if}
 				<p class="muted small">
 					{#if isLocal}
-						Gitignored. Overrides every environment; keep secrets here. Values set in the process environment
-						still win.
+						Applied on top of whichever environment is selected, so a value here wins over the environment file.
+						Gitignored; keep secrets here. Values set in the process environment still win.
 					{:else}
 						Committed with the collection. Keep secrets in <code>.env.local</code> instead.
 					{/if}
@@ -280,14 +366,16 @@
 							{:else}
 								<span class="icon-space"></span>
 							{/if}
-							<button class="icon" onclick={() => removeRow(row.id)} title="Remove variable">✕</button>
+							<button class="icon-btn" onclick={() => removeRow(row.id)} title="Remove variable" aria-label="Remove variable">
+								<Icon name="x" size={12} />
+							</button>
 						</div>
 						{#if problems[row.id]}<p class="problem">{problems[row.id]}</p>{/if}
 					{:else}
 						<p class="muted small">No variables yet.</p>
 					{/each}
 				</div>
-				<button class="add" onclick={addRow}>+ Add variable</button>
+				<button class="add" onclick={addRow}><Icon name="plus" size={12} />Add variable</button>
 			</section>
 		</div>
 
@@ -304,26 +392,11 @@
 </div>
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: #0008;
-		display: grid;
-		place-items: center;
-		z-index: 10;
-	}
 	.dialog {
 		width: min(860px, 94vw);
 		height: min(620px, 90vh);
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
+		overflow: hidden;
 	}
-	h3,
 	p {
 		margin: 0;
 	}
@@ -351,9 +424,71 @@
 		border-color: transparent;
 		text-align: left;
 	}
+	.item:hover:not(:disabled) {
+		border-color: transparent;
+	}
 	.item.active {
+		background: var(--selected);
+		border-color: transparent;
+		box-shadow: inset 2px 0 0 var(--accent);
+	}
+	.name-form {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 6px;
+		padding: 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
 		background: var(--bg);
-		border-color: var(--border);
+	}
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--muted);
+	}
+	.name-buttons {
+		display: flex;
+		justify-content: flex-end;
+		gap: 6px;
+	}
+	.name-buttons button {
+		min-height: 24px;
+		padding: 0 8px;
+		font-size: 12px;
+	}
+	.rename {
+		width: 180px;
+	}
+	.spacer {
+		flex: 1;
+	}
+	.group {
+		margin: 2px 0 4px;
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted);
+	}
+	.local-group {
+		margin-top: 16px;
+		padding-top: 12px;
+		border-top: 1px solid var(--border);
+	}
+	.none {
+		padding: 0 10px;
+	}
+	.note {
+		margin-top: 4px;
+		padding: 0 2px;
+	}
+	.title {
+		font-family: var(--sans);
+		font-weight: 600;
+		color: var(--text);
+		margin-right: 6px;
 	}
 	.new,
 	.add {
@@ -398,7 +533,7 @@
 	}
 	.row {
 		display: grid;
-		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 48px 28px;
+		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 48px 24px;
 		gap: 4px;
 		align-items: center;
 	}
@@ -429,11 +564,5 @@
 	}
 	.error {
 		color: var(--fail);
-	}
-	.buttons {
-		display: flex;
-		justify-content: flex-end;
-		align-items: center;
-		gap: 8px;
 	}
 </style>

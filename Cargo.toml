@@ -3,15 +3,21 @@ resolver = "2"
 members = [
     "crates/sankh-core",
     "crates/sankh-server",
+    "crates/sankh-mcp",
     "crates/sankh-cli",
     "crates/sankh-desktop",
 ]
 # The desktop app needs system webview libraries (webkit2gtk on Linux), so
 # plain `cargo build`/`cargo test` skip it; use `-p sankh-desktop`.
-default-members = ["crates/sankh-core", "crates/sankh-server", "crates/sankh-cli"]
+default-members = [
+    "crates/sankh-core",
+    "crates/sankh-server",
+    "crates/sankh-mcp",
+    "crates/sankh-cli",
+]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sankh-dev/sankh"
@@ -19,8 +25,9 @@ homepage = "https://sankh.dev"
 rust-version = "1.85"
 
 [workspace.dependencies]
-sankh-core = { path = "crates/sankh-core", version = "0.4.0" }
-sankh-server = { path = "crates/sankh-server", version = "0.4.0" }
+sankh-core = { path = "crates/sankh-core", version = "0.5.0" }
+sankh-server = { path = "crates/sankh-server", version = "0.5.0" }
+sankh-mcp = { path = "crates/sankh-mcp", version = "0.5.0" }
 
 anyhow = "1"
 thiserror = "2"
@@ -44,6 +51,8 @@ notify = "8"
 futures = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
 uuid = { version = "1", features = ["v4"] }
+rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
+schemars = "1"
 
 insta = { version = "1", features = ["yaml"] }
 httpmock = "0.8"

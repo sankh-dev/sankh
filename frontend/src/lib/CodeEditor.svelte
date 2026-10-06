@@ -26,7 +26,7 @@
 			'.cm-activeLineGutter': { backgroundColor: '#ffffff0c' },
 			'&.cm-focused .cm-cursor': { borderLeftColor: 'var(--accent-soft)' },
 			'.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-				backgroundColor: '#1d9a7855 !important'
+				backgroundColor: '#22a88255 !important'
 			},
 			'.cm-tooltip': { backgroundColor: 'var(--panel-2)', border: '1px solid var(--border)' }
 		},

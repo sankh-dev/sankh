@@ -6,6 +6,7 @@
 | --- | --- |
 | `crates/sankh-core` | Parser, env layering, runner, assertions, captures, trust, reports. All I/O both front ends share. |
 | `crates/sankh-server` | `axum` API, auth and Origin/Host guards, SSE runs, embedded UI. |
+| `crates/sankh-mcp` | `sankh mcp`: stdio MCP server (read and run only) on top of `sankh-core`. |
 | `crates/sankh-cli` | The `sankh` binary. |
 | `frontend/` | Svelte 5 + Vite + TypeScript UI, embedded into the server at build time. |
 | `examples/petstore` | Reference collection; `cargo run --example petstore_mock` serves its API. |

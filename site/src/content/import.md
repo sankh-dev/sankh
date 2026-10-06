@@ -5,8 +5,8 @@ sankh import postman COLLECTION.json [--env ENV.json]... [-o DIR] [--force] [--j
 ```
 
 Converts a Postman Collection v2.0 or v2.1 export into a Sankh folder. To
-bring a single request into the UI instead, paste its `curl` command into
-**New request**.
+bring a single request into the UI instead, choose **+** (new request) on a
+collection or folder and paste its `curl` command.
 
 ```bash
 sankh import postman "My API.postman_collection.json" \
@@ -21,8 +21,7 @@ sankh run my-api --env dev
 The [web UI](serve.md) and the [desktop app](desktop.md) do the same
 conversion without a terminal:
 
-1. Choose **Import Postman...** in the header (or **+ Import from Postman**
-   under the collection list).
+1. Choose **Add collection > Import from Postman…** in the header.
 2. Pick the exported collection and, optionally, one or more environment
    exports. Sankh shows the import report before writing anything: request
    and folder counts, renamed variables, the values to set in `.env.local`,
@@ -73,7 +72,7 @@ Import also creates `.env.local` with a sample value for each of these
 variables, guessed from its name: `http://localhost:8080` for `*_URL` and
 `*_HOST`, `1` for `*_ID`, `user@example.com` for `*_EMAIL`, and `changeme` for
 tokens, keys, passwords and anything else. Replace them before real use, in the
-file or from **Manage environments** in the UI.
+file or from **Manage environments…** in the collection's **⋯** menu in the UI.
 
 ## Safety
 

@@ -10,6 +10,8 @@
 	import ImportPostmanDialog from './lib/ImportPostmanDialog.svelte';
 	import CopyDialog from './lib/CopyDialog.svelte';
 	import EnvManager, { type EnvChange } from './lib/EnvManager.svelte';
+	import Icon from './lib/Icon.svelte';
+	import Menu from './lib/Menu.svelte';
 	import { ApiError, api, run, setToken, streamEvents } from './lib/api';
 	import type { CollectionInfo, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
 
@@ -94,8 +96,8 @@
 		const e = await api.envs(cid);
 		envLists = { ...envLists, [cid]: e.envs };
 		const saved = localStorage.getItem(ENV_KEY(cid));
-		envs[cid] =
-			saved !== null && (saved === '' || e.envs.includes(saved)) ? saved : (e.default ?? e.envs[0] ?? '');
+		const def = e.default && e.envs.includes(e.default) ? e.default : null;
+		envs[cid] = saved !== null && e.envs.includes(saved) ? saved : (def ?? e.envs[0] ?? '');
 		await loadVars(cid);
 	}
 
@@ -224,9 +226,7 @@
 		await loadVars(cid);
 	}
 
-	async function clearCaptures() {
-		if (!active) return;
-		const cid = active.id;
+	async function clearCaptures(cid: string) {
 		try {
 			await api.clearCaptures(cid, envs[cid] ?? '');
 			await loadVars(cid);
@@ -322,25 +322,17 @@
 	<header>
 		<img src="/logo.svg" alt="" width="26" height="26" />
 		<span class="brand">sankh</span>
-		{#if active}
-			<span class="collection" title={active.root}>
-				{active.name}
-				<span class="muted">· env {envs[active.id] || 'none'}</span>
-			</span>
-		{/if}
 		<span class="spacer"></span>
-		<button
-			onclick={clearCaptures}
-			disabled={!active}
-			title="Forget values captured in this session for {active?.name ?? 'the collection'} ({active ? envs[active.id] || 'no env' : ''})"
-		>
-			Clear captures
-		</button>
-		<button onclick={() => active && (newIn = { cid: active.id, path: '' })} disabled={!active || active.missing}>
-			New request
-		</button>
-		<button onclick={() => (adding = true)}>Add folder</button>
-		<button onclick={() => (importing = true)}>Import Postman...</button>
+		<Menu
+			title="Add a collection"
+			label="Add collection"
+			icon="plus"
+			class="add-menu"
+			items={[
+				{ label: 'Open folder…', icon: 'folder', onselect: () => (adding = true) },
+				{ label: 'Import from Postman…', icon: 'upload', onselect: () => (importing = true) }
+			]}
+		/>
 	</header>
 
 	{#if active && active.trust && !active.missing}
@@ -348,8 +340,11 @@
 	{/if}
 	{#if error}
 		<div class="error-bar" role="alert">
-			<span>{error}</span>
-			<button onclick={() => (error = null)}>Dismiss</button>
+			<Icon name="alert" />
+			<span class="error-text">{error}</span>
+			<button class="icon-btn" title="Dismiss" aria-label="Dismiss" onclick={() => (error = null)}>
+				<Icon name="x" />
+			</button>
 		</div>
 	{/if}
 
@@ -370,14 +365,17 @@
 					onnew={(f) => (newIn = { cid: col.id, path: f })}
 					onenv={(e) => changeEnv(col.id, e)}
 					onmanageenvs={() => (managingEnvs = col.id)}
+					onclearcaptures={() => clearCaptures(col.id)}
 					onunlink={() => unlink(col.id)}
 				/>
 			{/each}
 			{#if info && onlyScratch}
-				<p class="hint">Add a folder, or try requests in Scratch.</p>
+				<div class="onboard">
+					<p>Try requests in Scratch, or bring in a collection:</p>
+					<button class="ghost" onclick={() => (adding = true)}><Icon name="folder" />Open a folder</button>
+					<button class="ghost" onclick={() => (importing = true)}><Icon name="upload" />Import from Postman</button>
+				</div>
 			{/if}
-			<button class="add" onclick={() => (adding = true)}>+ Add folder</button>
-			<button class="add" onclick={() => (importing = true)}>+ Import from Postman</button>
 			{#if info && !info.saved}
 				<p class="hint">Session only: changes to this list are not saved.</p>
 			{/if}
@@ -402,9 +400,12 @@
 				{/key}
 			{:else}
 				<div class="placeholder">
-					<img src="/logo.svg" alt="" width="64" height="64" />
-					<p>Pick a request on the left, or create one.</p>
-					<p class="muted">Ctrl+S saves · Ctrl+Enter runs</p>
+					<img src="/logo.svg" alt="" width="56" height="56" />
+					<p>Pick a request on the left, or create one with <Icon name="plus" size={12} class="inline" />.</p>
+					<p class="shortcuts muted">
+						<span><kbd>Ctrl</kbd> <kbd>S</kbd> save</span>
+						<span><kbd>Ctrl</kbd> <kbd>Enter</kbd> run</span>
+					</p>
 				</div>
 			{/if}
 		</section>
@@ -457,7 +458,7 @@
 
 {#if needToken}
 	<div class="backdrop">
-		<form class="token" onsubmit={submitToken}>
+		<form class="dialog token" onsubmit={submitToken}>
 			<h3>Token required</h3>
 			<p class="muted">This server was started with <code>--token</code>.</p>
 			<input type="password" bind:value={tokenInput} placeholder="token" aria-label="Token" />
@@ -476,7 +477,8 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 8px 14px;
+		height: 44px;
+		padding: 0 14px;
 		border-bottom: 1px solid var(--border);
 		background: var(--panel);
 	}
@@ -485,9 +487,9 @@
 		font-size: 15px;
 		letter-spacing: 0.02em;
 	}
-	.collection {
-		padding-left: 10px;
-		border-left: 1px solid var(--border);
+	header :global(.add-menu) {
+		color: var(--text);
+		border-color: var(--border-strong);
 	}
 	.spacer {
 		flex: 1;
@@ -504,13 +506,24 @@
 		padding: 0 0 6px;
 		background: var(--panel);
 	}
-	.add {
-		display: block;
-		margin: 8px 10px 4px;
-		width: calc(100% - 20px);
-		background: none;
-		border-style: dashed;
+	.onboard {
+		margin: 10px;
+		padding: 12px;
+		border: 1px dashed var(--border-strong);
+		border-radius: var(--radius);
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 4px;
+	}
+	.onboard p {
+		margin: 0 0 4px;
 		color: var(--muted);
+		font-size: 12px;
+	}
+	.onboard button {
+		justify-content: flex-start;
+		color: var(--text);
 	}
 	.hint {
 		margin: 6px 12px;
@@ -532,44 +545,52 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 4px;
-		opacity: 0.85;
+		gap: 6px;
+		padding: 20px;
+		text-align: center;
+	}
+	.placeholder img {
+		opacity: 0.8;
+		margin-bottom: 6px;
+	}
+	.placeholder p {
+		margin: 0;
+	}
+	.placeholder :global(.inline) {
+		display: inline-block;
+		vertical-align: -1px;
+	}
+	.placeholder .shortcuts {
+		display: flex;
+		gap: 16px;
+		margin-top: 8px;
+		font-size: 12px;
 	}
 	.muted {
 		color: var(--muted);
 	}
 	.error-bar {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		padding: 6px 14px;
-		background: #4a1c1c;
-		color: #ffd0d0;
+		gap: 10px;
+		padding: 6px 10px 6px 14px;
+		background: var(--fail-bg);
+		border-bottom: 1px solid #5c2629;
+		color: #ffd6d6;
+	}
+	.error-text {
+		flex: 1;
 		white-space: pre-wrap;
 	}
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: #000a;
-		display: grid;
-		place-items: center;
+	.error-bar button {
+		color: inherit;
 	}
 	.token {
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 18px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		width: 320px;
-	}
-	.token h3 {
-		margin: 0;
+		width: 340px;
 	}
 	@media (max-width: 1100px) {
 		main {
-			grid-template-columns: 220px minmax(0, 1fr);
+			grid-template-columns: 240px minmax(0, 1fr);
 			grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 		}
 		aside {

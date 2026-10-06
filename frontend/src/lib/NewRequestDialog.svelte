@@ -63,27 +63,6 @@
 </div>
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: #0008;
-		display: grid;
-		place-items: center;
-		z-index: 10;
-	}
-	.dialog {
-		width: min(560px, 92vw);
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-	h3 {
-		margin: 0 0 4px;
-	}
 	label {
 		display: flex;
 		flex-direction: column;
@@ -93,11 +72,6 @@
 	label input,
 	label textarea {
 		color: var(--text);
-	}
-	.buttons {
-		display: flex;
-		justify-content: flex-end;
-		gap: 8px;
 	}
 	.error {
 		color: var(--fail);
