@@ -38,6 +38,8 @@ export interface Info {
 	version: string;
 	/** False for `sankh serve A B`: workspace changes last for the session only. */
 	saved: boolean;
+	/** The server runs on this machine, so it can open folders in the file manager. */
+	can_reveal: boolean;
 	collections: CollectionInfo[];
 }
 

@@ -77,6 +77,12 @@
 		}
 	}
 
+	/** Escapes ancestor stacking contexts (sticky headers) that would clip the popup. */
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return () => node.remove();
+	}
+
 	function closeOnScroll(node: HTMLElement) {
 		const onscroll = (e: Event) => !node.contains(e.target as Node) && hide(false);
 		document.addEventListener('scroll', onscroll, true);
@@ -108,6 +114,7 @@
 {#if open}
 	<div
 		bind:this={list}
+		{@attach portal}
 		{@attach closeOnScroll}
 		class="menu"
 		role="menu"

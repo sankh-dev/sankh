@@ -50,6 +50,9 @@ pub struct AppState {
     /// Enforce the Host allow-list (always on for loopback binds).
     pub check_host: bool,
     pub allowed_hosts: Vec<String>,
+    /// Bound to loopback, so the browser runs on this machine and may open
+    /// local folders in its file manager.
+    pub local: bool,
     pub runs: runs::Runs,
     /// Captured values per (collection id, environment), so single-request
     /// runs in the UI can chain (log in once, then use the token).
@@ -71,13 +74,15 @@ impl AppState {
             .map(String::from)
             .collect();
         allowed_hosts.extend(allow_hosts.iter().map(|h| h.to_ascii_lowercase()));
-        let check_host = is_loopback(listen) || !allow_hosts.is_empty();
+        let local = is_loopback(listen);
+        let check_host = local || !allow_hosts.is_empty();
         let (changes, _) = broadcast::channel(64);
         AppState {
             registry: RwLock::new(registry),
             token,
             check_host,
             allowed_hosts,
+            local,
             runs: runs::Runs::default(),
             captures: Mutex::new(HashMap::new()),
             changes,
@@ -133,6 +138,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/default-env", put(api::put_default_env))
         .route("/captures", delete(api::clear_captures))
         .route("/trust", get(api::get_trust).post(api::post_trust))
+        .route("/reveal", post(api::reveal))
         .route("/run", post(api::start_run));
     let api = Router::new()
         .route("/info", get(api::info))

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Open folder.** A collection's **⋯** menu has **Open folder**, which shows
+  the collection in your file manager. Only offered when the server runs on
+  your machine (loopback); `GET /api/info` reports it as `can_reveal`. API:
+  `POST /api/c/{id}/reveal`.
+
+### Fixed
+
+- A collection's **⋯** menu no longer draws underneath the next collection's
+  header.
+- Collections no longer randomly show "No requests yet." when several load or
+  refresh at once (for example right after a Postman import).
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

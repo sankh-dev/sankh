@@ -109,7 +109,8 @@
 
 	async function loadCollection(c: CollectionInfo) {
 		try {
-			trees = { ...trees, [c.id]: await api.tree(c.id) };
+			const tree = await api.tree(c.id);
+			trees = { ...trees, [c.id]: tree };
 			await refreshEnvs(c.id);
 		} catch (e) {
 			fail(e);
@@ -150,7 +151,8 @@
 	async function refreshTree(cid: string) {
 		if (!byId[cid] || byId[cid].missing) return;
 		try {
-			trees = { ...trees, [cid]: await api.tree(cid) };
+			const tree = await api.tree(cid);
+			trees = { ...trees, [cid]: tree };
 		} catch (e) {
 			fail(e);
 		}
@@ -424,6 +426,7 @@
 					onmanageenvs={() => (managingEnvs = col.id)}
 					onclearcaptures={() => clearCaptures(col.id)}
 					onunlink={() => unlink(col.id)}
+					onreveal={info?.can_reveal ? () => api.reveal(col.id).catch(fail) : undefined}
 				/>
 			{/each}
 			{#if info && onlyScratch}

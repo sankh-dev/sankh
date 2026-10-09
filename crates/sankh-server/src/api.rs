@@ -129,8 +129,45 @@ pub async fn info(State(state): State<Arc<AppState>>) -> ApiResult {
     Ok(Json(json!({
         "version": sankh_core::version(),
         "saved": registry.persist(),
+        "can_reveal": state.local,
         "collections": collections,
     })))
+}
+
+/// Opens the collection folder in the system file manager. Only on loopback
+/// binds: otherwise it would open on the server, not the user's machine.
+pub async fn reveal(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
+    if !state.local {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "opening folders is only available when the server runs locally".into(),
+            None,
+        ));
+    }
+    let root = collection(&state, &cid)?.root;
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    let mut child = std::process::Command::new(opener)
+        .arg(&root)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not run {opener}: {e}"),
+                None,
+            )
+        })?;
+    // Reap the opener so it does not linger as a zombie.
+    std::thread::spawn(move || child.wait());
+    Ok(Json(json!({ "opened": root.display().to_string() })))
 }
 
 #[derive(Deserialize)]

@@ -117,6 +117,27 @@ async fn token_is_required_when_configured() {
 }
 
 #[tokio::test]
+async fn reveal_is_local_only() {
+    let d = folder(&[("a.sh", "curl x\n")]);
+    let (s, _) = state(&d, None);
+    let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+    assert_eq!(info["can_reveal"], true);
+    let (status, _) = call(&s, "POST", "/api/c/nope/reveal", &[], None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let paths = vec![d.path().to_path_buf()];
+    let registry = Registry::session(&paths, false).unwrap();
+    let cid = registry.slots()[0].id.clone();
+    let remote = Arc::new(AppState::new(registry, Some("t".into()), "0.0.0.0", vec![]));
+    let auth = [("authorization", "Bearer t")];
+    let (_, info) = call(&remote, "GET", "/api/info", &auth, None).await;
+    assert_eq!(info["can_reveal"], false);
+    let reveal = format!("/api/c/{cid}/reveal");
+    let (status, _) = call(&remote, "POST", &reveal, &auth, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn rejects_foreign_hosts_and_origins() {
     let d = folder(&[("a.sh", "curl x\n")]);
     let (s, cid) = state(&d, None);

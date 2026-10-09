@@ -117,6 +117,7 @@ export const api = {
 	clearCaptures: (cid: string, env: string) =>
 		call<unknown>('DELETE', `${c(cid)}/captures?env=${encodeURIComponent(env || '_')}`),
 	trust: (cid: string) => call<TrustStatus>('POST', `${c(cid)}/trust`),
+	reveal: (cid: string) => call<{ opened: string }>('POST', `${c(cid)}/reveal`),
 	startRun: (cid: string, path: string, env: string) =>
 		call<{ id: string }>('POST', `${c(cid)}/run`, { path, env }),
 	cancelRun: (id: string) => call<{ cancelled: boolean }>('POST', `/runs/${encodeURIComponent(id)}/cancel`)

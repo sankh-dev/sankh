@@ -22,6 +22,8 @@
 		onmanageenvs: () => void;
 		onclearcaptures: () => void;
 		onunlink: () => void;
+		/** Opens the folder in the file manager; absent when the server is remote. */
+		onreveal?: () => void;
 	}
 
 	let {
@@ -39,7 +41,8 @@
 		onenv,
 		onmanageenvs,
 		onclearcaptures,
-		onunlink
+		onunlink,
+		onreveal
 	}: Props = $props();
 
 	const COLLAPSED_KEY = (id: string) => `sankh-collapsed:${id}`;
@@ -50,6 +53,7 @@
 	let menu = $derived.by(() => {
 		const items: MenuItem[] = [];
 		if (!col.missing) {
+			if (onreveal) items.push({ label: 'Open folder', icon: 'folder', onselect: onreveal });
 			items.push(
 				{ label: 'Manage environments…', icon: 'sliders', onselect: onmanageenvs },
 				{ label: 'Clear captures', icon: 'eraser', hint: env || undefined, onselect: onclearcaptures }
