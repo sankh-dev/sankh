@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-09
+
 ### Added
 
 - **Open folder.** A collection's **⋯** menu has **Open folder**, which shows
