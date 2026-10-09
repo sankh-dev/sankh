@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-09
+
+### Added
+
+- **Image, HTML and XML previews.** The response **Body** tab now shows
+  `image/*` responses as images (up to 2 MB, with their pixel size), renders
+  HTML in a sandboxed preview, and indents XML the way it already did JSON.
+  A **Preview** / **Raw** toggle switches back to the raw text. The HTML preview
+  runs no scripts and loads no external CSS, images or fonts, so pages may look
+  plain. API: results include `body_base64` for image responses; `sankh run
+  --report json` and the MCP server leave it out.
+
 ## [0.6.1] - 2026-10-09
 
 ### Added

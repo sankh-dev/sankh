@@ -18,7 +18,7 @@
 
 	const installOptions = [
 		{ label: 'Shell (Linux, macOS)', command: INSTALL },
-		{ label: 'Pinned version', command: 'curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.6.1 sh' },
+		{ label: 'Pinned version', command: 'curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.7.0 sh' },
 		{ label: 'Homebrew', command: 'brew install sankh-dev/tap/sankh' },
 		{
 			label: 'PowerShell (Windows)',
