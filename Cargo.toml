@@ -53,6 +53,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 uuid = { version = "1", features = ["v4"] }
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 schemars = "1"
+base64 = "0.22"
 
 insta = { version = "1", features = ["yaml"] }
 httpmock = "0.8"

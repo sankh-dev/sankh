@@ -150,6 +150,7 @@ export interface ResponseView {
 	body: string;
 	body_truncated: boolean;
 	body_binary: boolean;
+	body_base64?: string;
 }
 
 export interface RequestResult {

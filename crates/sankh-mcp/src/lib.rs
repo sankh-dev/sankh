@@ -384,6 +384,7 @@ fn shrink(r: &mut RequestResult) {
         if truncate(&mut resp.body, MAX_BODY) {
             resp.body_truncated = true;
         }
+        resp.body_base64 = None;
     }
     truncate(&mut r.stderr, MAX_STDERR);
 }
@@ -457,6 +458,34 @@ mod tests {
         let mut short = "abc".to_string();
         assert!(!truncate(&mut short, 4));
         assert_eq!(short, "abc");
+    }
+
+    #[test]
+    fn shrink_drops_image_data() {
+        let mut r = RequestResult {
+            path: "logo.sh".into(),
+            name: "logo".into(),
+            outcome: Outcome::Passed,
+            response: Some(runner::ResponseView {
+                status: 200,
+                time_ms: 1.0,
+                size: 3,
+                url: "http://x/logo.png".into(),
+                headers: Vec::new(),
+                body: "<3 bytes of binary data>".into(),
+                body_truncated: false,
+                body_binary: true,
+                body_base64: Some("AAAA".into()),
+            }),
+            assertions: Vec::new(),
+            captures: Vec::new(),
+            error: None,
+            warnings: Vec::new(),
+            stderr: String::new(),
+            duration_ms: 1.0,
+        };
+        shrink(&mut r);
+        assert_eq!(r.response.unwrap().body_base64, None);
     }
 
     #[test]

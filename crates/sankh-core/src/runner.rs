@@ -72,6 +72,9 @@ pub struct ResponseView {
     pub body: String,
     pub body_truncated: bool,
     pub body_binary: bool,
+    /// The raw body of an `image/*` response up to `MAX_BODY_DISPLAY`, for previews.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_base64: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -312,7 +315,16 @@ fn view(resp: &Response, r: &Redactor) -> ResponseView {
         body: r.redact(&body),
         body_truncated: truncated,
         body_binary: binary,
+        body_base64: image_base64(resp),
     }
+}
+
+fn image_base64(resp: &Response) -> Option<String> {
+    use base64::Engine;
+    let ct = resp.header("content-type")?.trim_start();
+    let is_image = ct.len() >= 6 && ct[..6].eq_ignore_ascii_case("image/");
+    (is_image && resp.body.len() <= MAX_BODY_DISPLAY)
+        .then(|| base64::engine::general_purpose::STANDARD.encode(&resp.body))
 }
 
 fn find_in_path(program: &str) -> Option<PathBuf> {
@@ -545,5 +557,39 @@ mod tests {
                 ("X-A".to_string(), "1".to_string())
             ]
         );
+    }
+
+    fn response(content_type: &str, body: Vec<u8>) -> Response {
+        Response {
+            status: 200,
+            headers: vec![("Content-Type".to_string(), content_type.to_string())],
+            body,
+            ..Response::default()
+        }
+    }
+
+    #[test]
+    fn image_body_is_base64() {
+        let png = vec![0x89, b'P', b'N', b'G', 0xff];
+        let v = view(&response("image/png", png), &Redactor::default());
+        assert_eq!(v.body_base64.as_deref(), Some("iVBOR/8="));
+        assert!(v.body_binary);
+    }
+
+    #[test]
+    fn text_body_has_no_base64() {
+        let v = view(
+            &response("application/json", b"{}".to_vec()),
+            &Redactor::default(),
+        );
+        assert_eq!(v.body_base64, None);
+        assert!(!serde_json::to_string(&v).unwrap().contains("body_base64"));
+    }
+
+    #[test]
+    fn large_image_has_no_base64() {
+        let big = vec![0u8; MAX_BODY_DISPLAY + 1];
+        let v = view(&response("IMAGE/JPEG", big), &Redactor::default());
+        assert_eq!(v.body_base64, None);
     }
 }

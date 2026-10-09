@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import ResponseBody from './ResponseBody.svelte';
 	import type { RequestResult } from './types';
 
 	interface Props {
@@ -8,15 +9,6 @@
 
 	let { result }: Props = $props();
 	let tab = $state<'body' | 'headers' | 'log'>('body');
-
-	let pretty = $derived.by(() => {
-		const body = result?.response?.body ?? '';
-		try {
-			return JSON.stringify(JSON.parse(body), null, 2);
-		} catch {
-			return body;
-		}
-	});
 
 	function formatSize(n: number) {
 		if (n < 1024) return `${n} B`;
@@ -81,7 +73,7 @@
 			</div>
 			<div class="content">
 				{#if tab === 'body'}
-					<pre class="mono">{pretty}</pre>
+					<ResponseBody response={result.response} />
 					{#if result.response.body_truncated}<p class="meta">Body truncated for display.</p>{/if}
 				{:else if tab === 'headers'}
 					<table>

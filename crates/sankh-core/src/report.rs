@@ -40,13 +40,24 @@ impl Summary {
 struct JsonReport<'a> {
     collection: &'a str,
     summary: Summary,
-    results: &'a [RequestResult],
+    results: Vec<RequestResult>,
 }
 
 pub fn json(collection: &str, results: &[RequestResult]) -> String {
+    let summary = Summary::of(results);
+    let results = results
+        .iter()
+        .cloned()
+        .map(|mut r| {
+            if let Some(resp) = r.response.as_mut() {
+                resp.body_base64 = None;
+            }
+            r
+        })
+        .collect();
     serde_json::to_string_pretty(&JsonReport {
         collection,
-        summary: Summary::of(results),
+        summary,
         results,
     })
     .unwrap_or_default()
@@ -151,4 +162,39 @@ pub fn failure_details(r: &RequestResult) -> String {
         lines.push(e.clone());
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runner::ResponseView;
+
+    #[test]
+    fn json_report_omits_image_data() {
+        let result = RequestResult {
+            path: "logo.sh".into(),
+            name: "logo".into(),
+            outcome: Outcome::Passed,
+            response: Some(ResponseView {
+                status: 200,
+                time_ms: 1.0,
+                size: 3,
+                url: "http://x/logo.png".into(),
+                headers: Vec::new(),
+                body: "<3 bytes of binary data>".into(),
+                body_truncated: false,
+                body_binary: true,
+                body_base64: Some("AAAA".into()),
+            }),
+            assertions: Vec::new(),
+            captures: Vec::new(),
+            error: None,
+            warnings: Vec::new(),
+            stderr: String::new(),
+            duration_ms: 1.0,
+        };
+        let out = json("api", &[result]);
+        assert!(!out.contains("body_base64"));
+        assert!(out.contains("binary data"));
+    }
 }
