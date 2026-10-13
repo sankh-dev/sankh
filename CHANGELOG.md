@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
+### Added
+
+- **Variables without a value are flagged.** A variable that is empty, still
+  `changeme`, or not defined in the selected environment shows as an amber or
+  red chip under the URL, is underlined in raw mode, and is counted in the top
+  bar. Click a chip (or hover the underline) to set it in `.env.local`
+  without leaving the request. Postman imports now fill placeholders with
+  `changeme`. API: `GET /api/c/{id}/envs/{name}` reports `unset` per
+  variable and `refs` with the status of every name the collection uses.
+- **Variable suggestions.** Typing `$` or `${` in the URL, headers, body,
+  curl flags, assertions or captures lists variables from the environment,
+  `.env.local` and captures, with their values. Raw mode does the same and
+  closes the brace.
+- **Format JSON.** The **Body** tab has a **Format** button that indents JSON
+  bodies, keeping bare `$VAR` references intact.
+
+### Changed
+
+- **Request editor layout.** The name, description and tags are an inline
+  header instead of form fields, and headers, body, assertions, captures and
+  settings are tabs with counts. The method is a pill joined to the URL, with
+  **Save** and **Run** right beside it; the **Form** / **Raw** switch sits
+  before the name. The top bar shows the collection and file path.
+- **Secrets.** Token, password and key values have an eye toggle inside the
+  field and a copy button. The environment manager has **Reveal secrets** and
+  highlights values still set to `changeme`.
+
+### Fixed
+
+- Switching between **Form** and **Raw** (and saving) works when the UI runs
+  from the Vite dev server.
+
 ## [0.7.0] - 2026-10-09
 
 ### Added
