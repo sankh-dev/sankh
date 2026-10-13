@@ -6,6 +6,8 @@
 	import { onMount } from 'svelte';
 	import { api } from './api';
 	import Icon from './Icon.svelte';
+	import SecretInput from './SecretInput.svelte';
+	import { isPlaceholder, isSecretName } from './vars';
 	import type { EnvFileVar } from './types';
 
 	interface Props {
@@ -23,7 +25,6 @@
 	const LOCAL = ' local';
 	const ENV_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 	const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-	const SECRET = /TOKEN|SECRET|KEY|PASSWORD|PASSWD|AUTH|COOKIE/i;
 
 	type Row = { id: number; name: string; value: string; reveal: boolean };
 
@@ -31,11 +32,14 @@
 	let defaultEnv = $state<string | null>(null);
 	let target = $state(LOCAL);
 	let rows = $state<Row[]>([]);
-	let original = $state('');
+	let original = $state('[]');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let naming = $state<{ mode: 'create' | 'rename'; value: string; copy: boolean } | null>(null);
+	let revealAll = $state(false);
 	let nextId = 0;
+	let hasSecrets = $derived(rows.some((r) => isSecretName(r.name)));
+	let placeholders = $derived(rows.filter((r) => r.name.trim() && isPlaceholder(r.value)).length);
 
 	let isLocal = $derived(target === LOCAL);
 	let snapshot = $derived(JSON.stringify(cleaned(rows)));
@@ -72,8 +76,14 @@
 	}
 
 	function setRows(vars: EnvFileVar[]) {
-		rows = vars.map((v) => ({ id: nextId++, name: v.name, value: v.value, reveal: false }));
+		revealAll = false;
+		rows = vars.map((v) => ({ id: nextId++, name: v.name, value: v.value, reveal: !isSecretName(v.name) }));
 		original = JSON.stringify(cleaned(rows));
+	}
+
+	function toggleRevealAll() {
+		revealAll = !revealAll;
+		for (const r of rows) r.reveal = revealAll || !isSecretName(r.name);
 	}
 
 	async function loadList() {
@@ -317,6 +327,11 @@
 						<span class="mono path">
 							{#if isLocal}<span class="title">Local overrides</span> .env.local{:else}environments/{target}.env{/if}
 						</span>
+						{#if hasSecrets}
+							<button class="ghost" onclick={toggleRevealAll} aria-pressed={revealAll}>
+								<Icon name={revealAll ? 'eye-off' : 'eye'} size={13} />{revealAll ? 'Hide secrets' : 'Reveal secrets'}
+							</button>
+						{/if}
 						{#if !isLocal}
 							<button onclick={makeDefault} disabled={busy}>
 								{defaultEnv === target ? 'Unset default' : 'Make default'}
@@ -336,36 +351,42 @@
 					{/if}
 					<code>$&#123;VAR&#125;</code> expands; write <code>\$</code> for a literal dollar sign.
 				</p>
+				{#if placeholders}
+					<p class="needs small">
+						<Icon name="alert" size={12} />
+						{placeholders === 1 ? '1 variable is' : `${placeholders} variables are`} empty or still
+						<code>changeme</code>.
+					</p>
+				{/if}
 
 				<div class="table">
 					{#each rows as row (row.id)}
-						{@const masked = SECRET.test(row.name) && !row.reveal}
-						<div class="row">
-							<input
-								class={['mono', problems[row.id] && 'bad']}
-								bind:value={row.name}
-								placeholder="NAME"
-								aria-label="Variable name"
-								title={problems[row.id] ?? ''}
-							/>
-							<input
-								class="mono"
-								type={masked ? 'password' : 'text'}
+						{@const secret = isSecretName(row.name)}
+						{@const unset = !!row.name.trim() && isPlaceholder(row.value)}
+						<div class={['row', unset && 'unset']}>
+							<div class="name">
+								<input
+									class={['mono', problems[row.id] && 'bad']}
+									bind:value={row.name}
+									placeholder="NAME"
+									aria-label="Variable name"
+									title={problems[row.id] ?? ''}
+								/>
+								{#if secret}
+									<span class="lock" title="Looks secret: masked by default and redacted in output">
+										<Icon name="lock" size={11} />
+									</span>
+								{/if}
+							</div>
+							<SecretInput
 								bind:value={row.value}
-								placeholder="value"
+								bind:revealed={row.reveal}
+								autohide={secret && !revealAll}
+								copyable
+								placeholder={unset ? 'needs a value' : 'value'}
+								title={unset ? 'Empty or placeholder: requests using it will not work yet' : undefined}
 								aria-label="Value of {row.name || 'new variable'}"
 							/>
-							{#if SECRET.test(row.name)}
-								<button
-									class="icon"
-									onclick={() => (row.reveal = !row.reveal)}
-									title={row.reveal ? 'Hide value' : 'Show value'}
-								>
-									{row.reveal ? 'hide' : 'show'}
-								</button>
-							{:else}
-								<span class="icon-space"></span>
-							{/if}
 							<button class="icon-btn" onclick={() => removeRow(row.id)} title="Remove variable" aria-label="Remove variable">
 								<Icon name="x" size={12} />
 							</button>
@@ -533,14 +554,42 @@
 	}
 	.row {
 		display: grid;
-		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 48px 24px;
+		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 24px;
 		gap: 4px;
 		align-items: center;
+		padding-left: 6px;
+		border-left: 2px solid transparent;
 	}
-	.icon {
-		padding: 2px 4px;
-		font-size: 11px;
-		background: none;
+	.row.unset {
+		border-left-color: var(--warn);
+	}
+	.row.unset :global(input[aria-label^='Value']) {
+		border-color: var(--warn-border);
+		background: #f2c14e0d;
+	}
+	.name {
+		position: relative;
+		display: flex;
+		min-width: 0;
+	}
+	.name input {
+		flex: 1;
+		width: 100%;
+		padding-right: 24px;
+	}
+	.lock {
+		position: absolute;
+		right: 7px;
+		top: 50%;
+		transform: translateY(-50%);
+		color: var(--warn);
+		opacity: 0.8;
+	}
+	.needs {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--warn);
 	}
 	.bad {
 		border-color: var(--fail);

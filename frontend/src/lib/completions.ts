@@ -1,4 +1,5 @@
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import type { VarOption } from './vars';
 
 const ANNOTATIONS: Completion[] = [
 	{ label: '@name', detail: 'display name', apply: '@name ' },
@@ -15,17 +16,25 @@ const OPERATORS: Completion[] = ['==', '!=', '>', '>=', '<', '<=', 'exists', 'ma
 );
 
 /** Builds a completion source; `vars` is read lazily so it stays current. */
-export function sankhCompletions(vars: () => string[]) {
+export function sankhCompletions(vars: () => VarOption[]) {
 	return (ctx: CompletionContext): CompletionResult | null => {
 		const line = ctx.state.doc.lineAt(ctx.pos);
 		const before = line.text.slice(0, ctx.pos - line.from);
 
-		const variable = /\$\{?([A-Za-z_][A-Za-z0-9_]*)?$/.exec(before);
+		const variable = /(?:^|[^\\])\$(\{?)([A-Za-z_][A-Za-z0-9_]*)?$/.exec(before);
 		if (variable) {
-			const start = ctx.pos - (variable[1]?.length ?? 0);
+			const braced = variable[1] === '{';
+			const after = line.text.slice(ctx.pos - line.from);
+			const closed = braced && /^[A-Za-z0-9_]*\}/.test(after);
 			return {
-				from: start,
-				options: vars().map((v) => ({ label: v, type: 'variable' })),
+				from: ctx.pos - (variable[2]?.length ?? 0),
+				options: vars().map((v) => ({
+					label: v.name,
+					detail: v.detail,
+					type: 'variable',
+					boost: v.status === 'ok' ? 1 : 0,
+					apply: braced && !closed ? `${v.name}}` : v.name
+				})),
 				validFor: /^[A-Za-z0-9_]*$/
 			};
 		}

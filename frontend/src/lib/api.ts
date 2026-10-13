@@ -2,7 +2,7 @@ import type {
 	CollectionInfo,
 	DirListing,
 	EnvFileVar,
-	EnvVar,
+	EnvVars,
 	Info,
 	PostmanImported,
 	PostmanImportRequest,
@@ -99,7 +99,7 @@ export const api = {
 		call<RequestDoc>('POST', `${c(cid)}/parse`, { content, path }),
 	envs: (cid: string) => call<{ envs: string[]; default: string | null }>('GET', `${c(cid)}/envs`),
 	envVars: (cid: string, name: string) =>
-		call<{ vars: EnvVar[] }>('GET', `${c(cid)}/envs/${encodeURIComponent(name || '_')}`),
+		call<EnvVars>('GET', `${c(cid)}/envs/${encodeURIComponent(name || '_')}`),
 	createEnv: (cid: string, name: string, copyFrom?: string) =>
 		call<{ name: string }>('POST', `${c(cid)}/envs`, { name, copy_from: copyFrom || undefined }),
 	renameEnv: (cid: string, name: string, to: string) =>

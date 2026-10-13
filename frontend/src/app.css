@@ -150,6 +150,71 @@ textarea:focus {
 	box-shadow: 0 0 0 3px #22a88226;
 }
 
+/* Reads as plain text until hovered or focused. */
+.ghost-input {
+	background: none;
+	border-color: transparent;
+}
+
+.ghost-input:hover {
+	border-color: var(--border);
+}
+
+.ghost-input:focus {
+	background: var(--bg);
+}
+
+.var-suggest {
+	position: fixed;
+	z-index: 40;
+	width: 330px;
+	max-height: 260px;
+	overflow: auto;
+	padding: 4px;
+	background: var(--panel-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+}
+
+.var-suggest-item {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	padding: 4px 8px;
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+}
+
+.var-suggest-item.active {
+	background: var(--selected);
+}
+
+.var-suggest-item .name {
+	flex: none;
+	font: 12px var(--mono);
+	color: var(--text);
+}
+
+.var-suggest-item .detail {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: right;
+	font: 11px var(--mono);
+	color: var(--muted);
+}
+
+.var-suggest-item.unset .detail {
+	color: var(--warn);
+}
+
+.var-suggest-item.runtime .detail {
+	color: var(--info);
+}
+
 code,
 pre,
 .mono {

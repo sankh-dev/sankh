@@ -3,29 +3,49 @@
 	import CodeEditor from './CodeEditor.svelte';
 	import FormView from './FormView.svelte';
 	import Icon from './Icon.svelte';
-	import Menu, { type MenuItem } from './Menu.svelte';
+	import VarChips from './VarChips.svelte';
 	import { api } from './api';
 	import type { Diagnostic, RequestDoc, RequestForm } from './types';
+	import type { VarOption, VarStatus } from './vars';
 
 	interface Props {
 		cid: string;
-		collection: string;
 		doc: RequestDoc;
-		vars: string[];
-		canRun: boolean;
-		running: boolean;
-		stopping: boolean;
+		/** Variables offered after `$` / `${`. */
+		vars: VarOption[];
+		/** Status of a referenced variable in the selected environment. */
+		varStatus: (name: string) => VarStatus;
+		/** Opens the quick "set this variable" popover. */
+		onsetvar: (name: string, anchor: DOMRect) => void;
 		onsave: (content: string) => Promise<RequestDoc>;
 		onrun: () => void;
-		/** Present while a run can be stopped. */
+		/** False until the collection is trusted. */
+		canRun: boolean;
+		/** Some run is in progress (this request or another). */
+		running: boolean;
+		stopping: boolean;
+		/** Present while a cancellable run is in progress. */
 		onstop?: () => void;
-		ondelete: () => void;
-		/** Absent when there is no other collection to copy to. */
-		oncopy?: () => void;
+		/** Unsaved edits, for the breadcrumb dot. */
+		dirty?: boolean;
 	}
 
-	let { cid, collection, doc, vars, canRun, running, stopping, onsave, onrun, onstop, ondelete, oncopy }: Props =
-		$props();
+	let {
+		cid,
+		doc,
+		vars,
+		varStatus,
+		onsetvar,
+		onsave,
+		onrun,
+		canRun,
+		running,
+		stopping,
+		onstop,
+		dirty = $bindable(false)
+	}: Props = $props();
+
+	let saving = $state(false);
 
 	// The parent remounts this component (via {#key}) when another file opens,
 	// so initial values are taken once from the prop.
@@ -35,22 +55,7 @@
 	let form = $state<RequestForm | null>(initial.form);
 	let diagnostics = $state<Diagnostic[]>(initial.request.diagnostics);
 	let rawReason = $state<string | null>(initial.request.raw_reason);
-	let dirty = $state(false);
-	let saving = $state(false);
 	let notice = $state<string | null>(null);
-	let copied = $state(false);
-
-	let menu = $derived<MenuItem[]>([
-		{ label: 'Copy as curl', icon: 'terminal', onselect: copyCurl },
-		{
-			label: 'Copy to collection…',
-			icon: 'copy',
-			disabled: !oncopy,
-			hint: oncopy ? undefined : 'no other collection',
-			onselect: () => oncopy?.()
-		},
-		{ label: 'Delete file', icon: 'trash', danger: true, onselect: ondelete }
-	]);
 
 	async function currentContent(): Promise<string> {
 		if (mode === 'form' && form) {
@@ -61,14 +66,25 @@
 
 	async function toRaw() {
 		if (mode === 'raw') return;
-		await currentContent();
+		try {
+			await currentContent();
+		} catch (e) {
+			notice = `Can't switch to raw: ${e instanceof Error ? e.message : e}`;
+			return;
+		}
 		mode = 'raw';
 		notice = null;
 	}
 
 	async function toForm() {
 		if (mode === 'form') return;
-		const parsed = await api.parse(cid, content, doc.path);
+		let parsed;
+		try {
+			parsed = await api.parse(cid, content, doc.path);
+		} catch (e) {
+			notice = `Can't switch to form: ${e instanceof Error ? e.message : e}`;
+			return;
+		}
 		diagnostics = parsed.request.diagnostics;
 		rawReason = parsed.request.raw_reason;
 		if (parsed.form) {
@@ -98,47 +114,56 @@
 		onrun();
 	}
 
-	async function copyCurl() {
+	/** Copies the curl command without the annotation header. */
+	export async function copyCurl() {
 		const text = await currentContent();
 		const lines = text.split('\n');
 		let start = 0;
 		while (start < lines.length && lines[start].trim().startsWith('#')) start++;
 		await navigator.clipboard.writeText(lines.slice(start).join('\n').trim());
-		copied = true;
-		setTimeout(() => (copied = false), 1200);
 	}
 </script>
 
-<div class="editor">
-	<div class="toolbar">
-		<div class="tabs" role="tablist">
-			<button role="tab" aria-selected={mode === 'form'} class={{ active: mode === 'form' }} onclick={toForm}>
-				Form
-			</button>
-			<button role="tab" aria-selected={mode === 'raw'} class={{ active: mode === 'raw' }} onclick={toRaw}>
-				Raw
-			</button>
-		</div>
-		<span class="path mono" title="{collection}: {doc.path}">
-			<span class="col">{collection}</span> / {doc.path}{dirty ? ' •' : ''}
-		</span>
-		<span class="spacer"></span>
-		{#if copied}<span class="copied"><Icon name="check" size={12} />Copied</span>{/if}
-		<button onclick={save} disabled={saving || !dirty} title="Save (Ctrl+S)">
-			<Icon name="save" size={13} />Save
+{#snippet modeSwitch()}
+	<div class="mode" role="tablist" aria-label="Editor mode">
+		<button role="tab" aria-selected={mode === 'form'} class={{ active: mode === 'form' }} onclick={toForm}>
+			Form
+		</button>
+		<button role="tab" aria-selected={mode === 'raw'} class={{ active: mode === 'raw' }} onclick={toRaw}>
+			Raw
+		</button>
+	</div>
+{/snippet}
+
+{#snippet actions()}
+	<div class="actions">
+		<button
+			class="icon-btn save"
+			onclick={save}
+			disabled={saving || !dirty}
+			title={dirty ? 'Save (Ctrl+S)' : 'No unsaved changes'}
+			aria-label="Save"
+		>
+			<Icon name="save" size={14} />
 		</button>
 		{#if running && onstop}
-			<button class="stop" onclick={onstop} disabled={stopping} title="Stop the run (Esc)">
+			<button class="run stop" onclick={onstop} disabled={stopping} title="Stop the run (Esc)">
 				<Icon name="stop" size={10} />{stopping ? 'Stopping…' : 'Stop'}
 			</button>
 		{:else}
-			<button class="primary" onclick={saveAndRun} disabled={!canRun || running} title="Run (Ctrl+Enter)">
+			<button
+				class="run primary"
+				onclick={saveAndRun}
+				disabled={!canRun || running}
+				title={canRun ? 'Run (Ctrl+Enter)' : 'Trust this collection to run requests'}
+			>
 				<Icon name="play" size={11} />{running ? 'Running…' : 'Run'}
 			</button>
 		{/if}
-		<Menu title="More actions for this request" items={menu} />
 	</div>
+{/snippet}
 
+<div class="editor">
 	{#if notice}
 		<div class="notice">{notice}</div>
 	{:else if mode === 'raw' && rawReason}
@@ -147,9 +172,17 @@
 
 	<div class="body">
 		{#if mode === 'form' && form}
-			<FormView bind:form onedit={() => (dirty = true)} />
+			<FormView bind:form onedit={() => (dirty = true)} {modeSwitch} {actions} {vars} {varStatus} {onsetvar} />
 		{:else}
-			<CodeEditor bind:value={content} {vars} onchange={() => (dirty = true)} />
+			<div class="raw-bar">
+				{@render modeSwitch()}
+				<VarChips text={content} {varStatus} {onsetvar} />
+				<span class="spacer"></span>
+				{@render actions()}
+			</div>
+			<div class="code">
+				<CodeEditor bind:value={content} {vars} {varStatus} {onsetvar} onchange={() => (dirty = true)} />
+			</div>
 		{/if}
 	</div>
 
@@ -169,68 +202,70 @@
 		height: 100%;
 		min-height: 0;
 	}
-	.toolbar {
+	.mode {
 		display: flex;
-		align-items: center;
-		gap: 6px;
-		height: 44px;
-		padding: 0 10px;
-		border-bottom: 1px solid var(--border);
-		background: var(--panel);
-	}
-	.toolbar button {
 		flex: none;
-		white-space: nowrap;
-	}
-	.tabs {
-		display: flex;
 		padding: 2px;
 		gap: 2px;
 		background: var(--bg);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 	}
-	.tabs button {
-		min-height: 22px;
-		padding: 0 10px;
-		font-size: 12px;
+	.mode button {
+		min-height: 20px;
+		padding: 0 9px;
+		font-size: 11px;
 		background: none;
 		border-color: transparent;
 		color: var(--muted);
 	}
-	.tabs button:hover:not(:disabled) {
+	.mode button:hover:not(:disabled) {
 		background: var(--panel-2);
 		border-color: transparent;
 		color: var(--text);
 	}
-	.tabs .active,
-	.tabs .active:hover:not(:disabled) {
+	.mode .active,
+	.mode .active:hover:not(:disabled) {
 		background: var(--panel-3);
 		color: var(--text);
+	}
+	.raw-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 38px;
+		padding: 4px 10px;
+		border-bottom: 1px solid var(--border);
+		background: var(--panel);
+	}
+	.spacer {
+		flex: 1;
+	}
+	.actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex: none;
+	}
+	.actions button {
+		min-height: 32px;
+		white-space: nowrap;
+	}
+	.save {
+		width: 32px;
+		padding: 0;
+	}
+	.save:not(:disabled) {
+		color: var(--text);
+	}
+	.run {
+		min-width: 76px;
+		justify-content: center;
 	}
 	.stop {
 		color: var(--fail);
 		border-color: var(--fail);
 		background: var(--fail-bg);
-	}
-	.copied {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		color: var(--ok);
-		font-size: 12px;
-	}
-	.path {
-		color: var(--muted);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.path .col {
-		color: var(--text);
-	}
-	.spacer {
-		flex: 1;
 	}
 	.notice {
 		padding: 6px 12px;
@@ -245,6 +280,12 @@
 		color: var(--muted);
 	}
 	.body {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.code {
 		flex: 1;
 		min-height: 0;
 	}

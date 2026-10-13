@@ -288,6 +288,45 @@ async fn manages_environments_and_env_local() {
 }
 
 #[tokio::test]
+async fn reports_unset_and_missing_variables() {
+    let d = folder(&[
+        (
+            "environments/dev.env",
+            "BASE_URL=http://x\nAPI_KEY=changeme\nEMPTY=\n",
+        ),
+        (
+            "01-login.sh",
+            "# @capture TOKEN=.token\ncurl \"$BASE_URL/login\" -H \"X-Key: $API_KEY\"\n",
+        ),
+        (
+            "02-me.sh",
+            "curl \"$BASE_URL/me?e=$EMPTY\" -H \"Authorization: Bearer $TOKEN\" -H \"X: ${SANKH_NOPE_VAR}\"\n",
+        ),
+    ]);
+    let (s, cid) = state(&d, None);
+    let (status, body) = call(&s, "GET", &format!("/api/c/{cid}/envs/dev"), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    let unset: Vec<&str> = body["vars"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["unset"] == true)
+        .map(|v| v["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(unset, ["API_KEY", "EMPTY"]);
+    assert_eq!(
+        body["refs"],
+        json!({
+            "API_KEY": "unset",
+            "BASE_URL": "ok",
+            "EMPTY": "unset",
+            "SANKH_NOPE_VAR": "missing",
+            "TOKEN": "runtime",
+        })
+    );
+}
+
+#[tokio::test]
 async fn reads_writes_and_renders_requests() {
     let dir = folder(&[(
         "users/01-list.sh",

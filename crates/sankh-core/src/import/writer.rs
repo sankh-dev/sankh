@@ -290,7 +290,7 @@ pub fn sample_value(name: &str) -> &'static str {
     } else if n == "TIMESTAMP" || n.ends_with("_TIMESTAMP") {
         "0"
     } else {
-        "changeme"
+        crate::env::PLACEHOLDER
     }
 }
 

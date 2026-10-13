@@ -11,10 +11,13 @@
 	import CopyDialog from './lib/CopyDialog.svelte';
 	import EnvManager, { type EnvChange } from './lib/EnvManager.svelte';
 	import Icon from './lib/Icon.svelte';
-	import Menu from './lib/Menu.svelte';
+	import Menu, { type MenuItem } from './lib/Menu.svelte';
+	import SecretInput from './lib/SecretInput.svelte';
+	import SetVarPopover from './lib/SetVarPopover.svelte';
 	import Splitter from './lib/Splitter.svelte';
 	import { ApiError, api, run, setToken, streamEvents } from './lib/api';
-	import type { CollectionInfo, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
+	import { needsValue, statusFrom, varOptions } from './lib/vars';
+	import type { CollectionInfo, EnvVars, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
 
 	/** A request (or folder) inside a collection. */
 	type Ref = { cid: string; path: string };
@@ -48,7 +51,7 @@
 	let trees = $state.raw<Record<string, TreeNode>>({});
 	let envLists = $state.raw<Record<string, string[]>>({});
 	let envs = $state<Record<string, string>>({});
-	let vars = $state.raw<Record<string, string[]>>({});
+	let envVars = $state.raw<Record<string, EnvVars>>({});
 	let selected = $state.raw<Ref | null>(null);
 	let doc = $state.raw<RequestDoc | null>(null);
 	let docRef = $state.raw<Ref | null>(null);
@@ -67,6 +70,10 @@
 	let needToken = $state(false);
 	let tokenInput = $state('');
 	let editor = $state<ReturnType<typeof RequestEditor>>();
+	let editorDirty = $state(false);
+	let copied = $state(false);
+	let setting = $state.raw<{ cid: string; name: string; anchor: DOMRect } | null>(null);
+	let unsetAnchor = $state<HTMLElement>();
 
 	let collections = $derived(info?.collections ?? []);
 	let byId = $derived(Object.fromEntries(collections.map((c) => [c.id, c])) as Record<string, CollectionInfo>);
@@ -84,6 +91,33 @@
 	});
 	let shownResult = $derived(selected ? (results[key(selected)] ?? null) : null);
 	let copyTargets = $derived(collections.filter((c) => !c.missing && c.id !== docRef?.cid));
+	let statusFns = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, statusFrom(v)])));
+	let optionLists = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, varOptions(v)])));
+	/** Collection the command bar is about. */
+	let barCid = $derived(docRef?.cid ?? (active && !active.missing ? active.id : null));
+	let unsetVars = $derived.by(() => {
+		const refs = barCid ? envVars[barCid]?.refs : undefined;
+		return refs ? Object.keys(refs).filter((n) => needsValue(refs[n])) : [];
+	});
+	let unsetItems = $derived<MenuItem[]>(
+		unsetVars.map((name) => ({
+			label: name,
+			icon: 'alert',
+			hint: envVars[barCid!]?.refs[name],
+			onselect: () => unsetAnchor && openSetVar(barCid!, name, unsetAnchor.getBoundingClientRect())
+		}))
+	);
+	let requestMenu = $derived<MenuItem[]>([
+		{ label: 'Copy as curl', icon: 'terminal', onselect: copyCurl },
+		{
+			label: 'Copy to collection…',
+			icon: 'copy',
+			disabled: copyTargets.length === 0,
+			hint: copyTargets.length ? undefined : 'no other collection',
+			onselect: () => (copying = true)
+		},
+		{ label: 'Delete file', icon: 'trash', danger: true, onselect: remove }
+	]);
 
 	function isTrusted(cid: string) {
 		return byId[cid]?.trust?.state === 'trusted';
@@ -139,13 +173,23 @@
 	}
 
 	async function loadVars(cid: string) {
-		let names: string[] = [];
+		let next: EnvVars = { vars: [], refs: {} };
 		try {
-			names = (await api.envVars(cid, envs[cid] ?? '')).vars.map((v) => v.name);
+			next = await api.envVars(cid, envs[cid] ?? '');
 		} catch {
 			// unknown env or missing folder: no completions
 		}
-		vars = { ...vars, [cid]: names };
+		envVars = { ...envVars, [cid]: next };
+	}
+
+	function openSetVar(cid: string, name: string, anchor: DOMRect) {
+		setting = { cid, name, anchor };
+	}
+
+	async function copyCurl() {
+		await editor?.copyCurl();
+		copied = true;
+		setTimeout(() => (copied = false), 1200);
 	}
 
 	async function refreshTree(cid: string) {
@@ -172,7 +216,7 @@
 	async function save(content: string): Promise<RequestDoc> {
 		const ref = docRef!;
 		const saved = await api.saveRequest(ref.cid, doc!.path, content);
-		await refreshTree(ref.cid);
+		await Promise.all([refreshTree(ref.cid), loadVars(ref.cid)]);
 		return saved;
 	}
 
@@ -308,7 +352,7 @@
 			const drop = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== cid));
 			trees = drop(trees);
 			envLists = drop(envLists);
-			vars = drop(vars);
+			envVars = drop(envVars);
 			for (const k of Object.keys(results)) if (k.startsWith(`${cid}:`)) delete results[k];
 			if (selected?.cid === cid) selected = null;
 			if (docRef?.cid === cid) {
@@ -329,7 +373,7 @@
 	}
 
 	function onkeydown(e: KeyboardEvent) {
-		const dialogOpen = newIn || adding || importing || copying || managingEnvs !== null || needToken;
+		const dialogOpen = newIn || adding || importing || copying || managingEnvs !== null || needToken || setting;
 		if (e.key === 'Escape' && runId && !dialogOpen && !e.defaultPrevented) {
 			e.preventDefault();
 			stopRun();
@@ -376,7 +420,33 @@
 	<header>
 		<img src="/logo.svg" alt="" width="26" height="26" />
 		<span class="brand">sankh</span>
+		{#if doc && docRef}
+			{@const colName = byId[docRef.cid]?.name ?? docRef.cid}
+			<span class="sep" aria-hidden="true"></span>
+			<span class="crumb" title="{colName}: {doc.path}">
+				<span class="col">{colName}</span>
+				<span class="slash">/</span>
+				<span class="mono file">{doc.path}</span>
+				{#if editorDirty}<span class="dirty" title="Unsaved changes" aria-label="Unsaved changes"></span>{/if}
+			</span>
+		{/if}
 		<span class="spacer"></span>
+		{#if unsetVars.length}
+			<span class="unset" bind:this={unsetAnchor}>
+				<Menu
+					title="Variables without a value in this environment"
+					label="{unsetVars.length} unset"
+					icon="alert"
+					class="unset-menu"
+					items={unsetItems}
+				/>
+			</span>
+		{/if}
+		{#if doc && docRef}
+			{#if copied}<span class="copied"><Icon name="check" size={12} />Copied</span>{/if}
+			<Menu title="More actions for this request" items={requestMenu} />
+			<span class="sep" aria-hidden="true"></span>
+		{/if}
 		<Menu
 			title="Add a collection"
 			label="Add collection"
@@ -452,21 +522,22 @@
 
 		<section class="editor-col">
 			{#if doc && docRef}
-				{#key `${docRef.cid}:${doc.path}:${docVersion}`}
+				{@const cid = docRef.cid}
+				{#key `${cid}:${doc.path}:${docVersion}`}
 					<RequestEditor
 						bind:this={editor}
-						cid={docRef.cid}
-						collection={byId[docRef.cid]?.name ?? docRef.cid}
+						bind:dirty={editorDirty}
+						{cid}
 						{doc}
-						vars={vars[docRef.cid] ?? []}
-						canRun={isTrusted(docRef.cid)}
+						vars={optionLists[cid] ?? []}
+						varStatus={statusFns[cid] ?? (() => 'ok')}
+						onsetvar={(name, anchor) => openSetVar(cid, name, anchor)}
+						onsave={save}
+						onrun={() => runPath(cid, doc!.path)}
+						canRun={isTrusted(cid)}
 						running={running !== null}
 						{stopping}
-						onsave={save}
-						onrun={() => runPath(docRef!.cid, doc!.path)}
 						onstop={runId ? stopRun : undefined}
-						ondelete={remove}
-						oncopy={copyTargets.length ? () => (copying = true) : undefined}
 					/>
 				{/key}
 			{:else}
@@ -534,6 +605,19 @@
 	/>
 {/if}
 
+{#if setting}
+	{@const s = setting}
+	<SetVarPopover
+		cid={s.cid}
+		name={s.name}
+		status={statusFns[s.cid]?.(s.name) ?? 'missing'}
+		anchor={s.anchor}
+		onsaved={() => loadVars(s.cid)}
+		onmanage={() => ((managingEnvs = s.cid), (setting = null))}
+		onclose={() => (setting = null)}
+	/>
+{/if}
+
 {#if copying && docRef}
 	<CopyDialog path={docRef.path} targets={copyTargets} oncopy={copyTo} onclose={() => (copying = false)} />
 {/if}
@@ -543,7 +627,7 @@
 		<form class="dialog token" onsubmit={submitToken}>
 			<h3>Token required</h3>
 			<p class="muted">This server was started with <code>--token</code>.</p>
-			<input type="password" bind:value={tokenInput} placeholder="token" aria-label="Token" />
+			<SecretInput bind:value={tokenInput} placeholder="token" aria-label="Token" />
 			<button class="primary" type="submit">Connect</button>
 		</form>
 	</div>
@@ -572,6 +656,70 @@
 	header :global(.add-menu) {
 		color: var(--text);
 		border-color: var(--border-strong);
+	}
+	header :global(button) {
+		flex: none;
+		white-space: nowrap;
+	}
+	.sep {
+		flex: none;
+		width: 1px;
+		height: 20px;
+		background: var(--border-strong);
+		margin: 0 4px;
+	}
+	.crumb {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		white-space: nowrap;
+	}
+	.crumb .col {
+		color: var(--muted);
+		flex: none;
+		max-width: 30ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.crumb .slash {
+		color: var(--border-strong);
+	}
+	.crumb .file {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		color: var(--text);
+	}
+	.dirty {
+		flex: none;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--warn);
+	}
+	.unset {
+		display: flex;
+		flex: none;
+	}
+	header :global(.unset-menu) {
+		color: var(--warn);
+		background: var(--warn-bg);
+		border-color: var(--warn-border);
+		min-height: 24px;
+		font-size: 12px;
+		border-radius: 999px;
+	}
+	header :global(.unset-menu:hover:not(:disabled)) {
+		color: var(--warn);
+		background: var(--warn-bg);
+		border-color: var(--warn);
+	}
+	.copied {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--ok);
+		font-size: 12px;
 	}
 	.spacer {
 		flex: 1;

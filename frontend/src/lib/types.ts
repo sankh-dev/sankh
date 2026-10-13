@@ -197,6 +197,14 @@ export interface EnvVar {
 	name: string;
 	value: string;
 	source: 'file' | 'capture';
+	/** Empty or the import placeholder (`changeme`), and not set elsewhere. */
+	unset: boolean;
+}
+
+export interface EnvVars {
+	vars: EnvVar[];
+	/** Status of every variable the collection's requests reference. */
+	refs: Record<string, 'ok' | 'unset' | 'missing' | 'runtime'>;
 }
 
 /** A variable of one env file as written: `${VAR}` expands, `\$` is literal. */

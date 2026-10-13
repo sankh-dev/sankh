@@ -4,7 +4,7 @@
 //! the process environment, then values captured earlier in the run.
 
 use crate::collection::{Collection, ENV_DIR};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 pub type Vars = BTreeMap<String, String>;
@@ -85,6 +85,45 @@ impl Env {
             .filter(|v| self.get(v).is_none_or(|s| s.is_empty()))
             .collect()
     }
+
+    /// Whether `key` still needs a real value, before any request runs.
+    /// `captured` lists names some request `@capture`s.
+    pub fn status(&self, key: &str, captured: &BTreeSet<String>) -> VarStatus {
+        let real = |v: Option<&String>| v.is_some_and(|s| !is_placeholder(s));
+        if real(self.captures.get(key))
+            || real(self.process.get(key))
+            || real(self.file_vars.get(key))
+        {
+            VarStatus::Ok
+        } else if captured.contains(key) {
+            VarStatus::Runtime
+        } else if self.file_vars.contains_key(key) {
+            VarStatus::Unset
+        } else {
+            VarStatus::Missing
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VarStatus {
+    Ok,
+    /// Defined, but empty or still the import placeholder.
+    Unset,
+    /// Not defined in any layer.
+    Missing,
+    /// Not set yet, but a request in the collection captures it.
+    Runtime,
+}
+
+/// Value written by the Postman importer for things the user must fill in.
+pub const PLACEHOLDER: &str = "changeme";
+
+/// Empty, or the import placeholder.
+pub fn is_placeholder(value: &str) -> bool {
+    let v = value.trim();
+    v.is_empty() || v.eq_ignore_ascii_case(PLACEHOLDER)
 }
 
 /// The process environment, minus what an AppImage launcher injected.
@@ -597,6 +636,31 @@ mod tests {
             Err(EnvError::NotFound { .. })
         ));
         assert_eq!(list_envs(&c), vec!["dev"]);
+    }
+
+    #[test]
+    fn reports_variable_status() {
+        let env = Env {
+            file_vars: Vars::from([
+                ("URL".to_string(), "http://x".to_string()),
+                ("KEY".to_string(), "changeme".to_string()),
+                ("EMPTY".to_string(), " ".to_string()),
+                ("TOKEN".to_string(), "".to_string()),
+                ("FROM_PROC".to_string(), "".to_string()),
+            ]),
+            process: Vars::from([("FROM_PROC".to_string(), "real".to_string())]),
+            captures: Vars::new(),
+        };
+        let captured = BTreeSet::from(["TOKEN".to_string(), "ID".to_string()]);
+        assert_eq!(env.status("URL", &captured), VarStatus::Ok);
+        assert_eq!(env.status("KEY", &captured), VarStatus::Unset);
+        assert_eq!(env.status("EMPTY", &captured), VarStatus::Unset);
+        assert_eq!(env.status("TOKEN", &captured), VarStatus::Runtime);
+        assert_eq!(env.status("ID", &captured), VarStatus::Runtime);
+        assert_eq!(env.status("FROM_PROC", &captured), VarStatus::Ok);
+        assert_eq!(env.status("NOPE", &captured), VarStatus::Missing);
+        assert!(is_placeholder("ChangeMe"));
+        assert!(!is_placeholder("secret"));
     }
 
     #[test]

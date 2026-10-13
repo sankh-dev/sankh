@@ -21,6 +21,7 @@ use sankh_core::workspace::WorkspaceError;
 use sankh_core::{RunContext, RunOptions, runner};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 pub struct ApiError(StatusCode, String, Option<Value>);
@@ -545,28 +546,58 @@ pub async fn envs(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -
 }
 
 /// Variables of an environment, for editor autocomplete. Secret values are masked.
+///
+/// `unset` marks values that are empty or the import placeholder; `refs` gives
+/// the status of every variable the collection's requests reference.
 pub async fn env_vars(
     State(state): State<Arc<AppState>>,
     Path((cid, name)): Path<(String, String)>,
 ) -> ApiResult {
     let c = collection(&state, &cid)?;
     let env_name = (name != "_").then_some(name.as_str());
-    let env = Env::load(&c, env_name).map_err(|e| bad(e.to_string()))?;
+    let mut env = Env::load(&c, env_name).map_err(|e| bad(e.to_string()))?;
+    if let Some(caps) = state.captures.lock().unwrap().get(&(cid, name)) {
+        env.captures = caps.clone();
+    }
+    let (referenced, captured) = collection_vars(&c);
     let redactor = Redactor::from_vars(&env.file_vars);
+    let entry = |k: &String, v: &String, source: &str| {
+        let unset = env.status(k, &captured) == env::VarStatus::Unset;
+        json!({ "name": k, "value": redactor.display_var(k, v), "source": source, "unset": unset })
+    };
     let mut vars: Vec<Value> = env
         .file_vars
         .iter()
-        .map(|(k, v)| json!({ "name": k, "value": redactor.display_var(k, v), "source": "file" }))
+        .map(|(k, v)| entry(k, v, "file"))
         .collect();
-    let captures = state.captures.lock().unwrap();
-    if let Some(caps) = captures.get(&(cid, name)) {
-        for (k, v) in caps {
-            vars.push(
-                json!({ "name": k, "value": redactor.display_var(k, v), "source": "capture" }),
-            );
-        }
+    vars.extend(env.captures.iter().map(|(k, v)| entry(k, v, "capture")));
+    let refs: serde_json::Map<String, Value> = referenced
+        .into_iter()
+        .map(|k| {
+            let status = env.status(&k, &captured);
+            (k, json!(status))
+        })
+        .collect();
+    Ok(Json(json!({ "vars": vars, "refs": refs })))
+}
+
+/// Variables referenced by the collection's requests, and those some request captures.
+fn collection_vars(c: &Collection) -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut referenced = BTreeSet::new();
+    let mut captured = BTreeSet::new();
+    for path in c.request_files(&c.root).unwrap_or_default() {
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        referenced.extend(sankh_core::shell::referenced_vars(&content));
+        captured.extend(
+            c.parse_file(&path, &content)
+                .captures
+                .into_iter()
+                .map(|x| x.var),
+        );
     }
-    Ok(Json(json!({ "vars": vars })))
+    (referenced, captured)
 }
 
 impl From<EnvEditError> for ApiError {
