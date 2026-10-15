@@ -19,12 +19,13 @@
 	const installOptions = [
 		{ label: 'Shell (Linux, macOS)', command: INSTALL },
 		{ label: 'Pinned version', command: 'curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh' },
-		{ label: 'Homebrew', command: 'brew install sankh-dev/tap/sankh' },
+		{ label: 'Homebrew (macOS, Linux)', command: 'brew install sankh-dev/tap/sankh' },
 		{
 			label: 'PowerShell (Windows)',
 			prompt: '>',
-			command: `powershell -c "irm ${GITHUB_URL}/releases/latest/download/sankh-installer.ps1 | iex"`
-		}
+			command: `powershell -ExecutionPolicy Bypass -c "irm ${GITHUB_URL}/releases/latest/download/sankh-installer.ps1 | iex"`
+		},
+		{ label: 'Desktop app (macOS, Homebrew)', command: 'brew install --cask sankh-dev/tap/sankh-desktop' }
 	];
 </script>
 
@@ -216,7 +217,8 @@
 				<h3>Secrets redacted</h3>
 				<p>
 					Values of variables named like <code>TOKEN</code>, <code>SECRET</code>, <code>KEY</code> or
-					<code>PASSWORD</code> are replaced with <code>***</code> in output, reports, and the UI.
+					<code>PASSWORD</code> are replaced with <code>***</code> in CLI output, CI reports, and MCP
+					results.
 				</p>
 			</article>
 			<article class="card">
@@ -248,13 +250,19 @@
 					</li>
 				{/each}
 			</ul>
+			<p class="more">
+				<a href={resolve('/docs/[slug]', { slug: 'install' })}
+					>All install options: Linux packages, WSL, manual download, from source</a
+				>
+			</p>
 			<div class="desktop">
 				<div>
 					<div class="caption">Desktop app</div>
 					<p>
 						Installers for macOS (<code>.dmg</code>), Windows (<code>.exe</code>, <code>.msi</code>) and
-						Linux (<code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code>). Not code signed yet; see the
-						<a href={resolve('/docs/[slug]', { slug: 'desktop' })}>desktop docs</a> for first launch.
+						Linux (<code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code>). Not code signed yet; the
+						<a href={resolve('/docs/[slug]', { slug: 'install' })}>install guide</a> has step-by-step
+						instructions for every OS and distribution, plus upgrading and uninstalling.
 					</p>
 				</div>
 				<a class="btn" href="{GITHUB_URL}/releases/latest" rel="external">Download</a>

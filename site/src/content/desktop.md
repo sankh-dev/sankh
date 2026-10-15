@@ -28,7 +28,10 @@ Or get the installer for your platform from the
 | Linux (Debian, Ubuntu) | `Sankh_<version>_amd64.deb` |
 | Linux (Fedora, RHEL, openSUSE) | `Sankh-<version>-1.x86_64.rpm` |
 
-Each file has a matching `.sha256` checksum next to it.
+Each file has a matching `.sha256` checksum next to it. There is no desktop
+build for Linux arm64 yet. [Install](install.md#desktop-app) has
+copy-paste commands for each OS and Linux distribution, and how to upgrade and
+uninstall.
 
 The installers are not code signed yet:
 
@@ -42,8 +45,8 @@ The installers are not code signed yet:
   distributions already have.
 
 The app does not include the `sankh` command. Install the CLI separately (see
-the [quickstart](quickstart.md)) if you also want `sankh run` in a terminal or
-in CI.
+[Install](install.md#cli)) if you also want `sankh run` in a terminal or in
+CI.
 
 ## Requirements
 

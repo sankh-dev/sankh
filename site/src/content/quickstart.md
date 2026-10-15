@@ -2,37 +2,25 @@
 
 ## Install
 
-```bash
-curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh
-```
-
-The installer downloads the release archive for your platform from GitHub,
-verifies its sha256 checksum, and installs `sankh` into `~/.local/bin` (override
-with `SANKH_INSTALL_DIR`). No root required.
-
-Other options:
+macOS and Linux:
 
 ```bash
-brew install sankh-dev/tap/sankh
-brew install --cask sankh-dev/tap/sankh-desktop   # desktop app (macOS)
+curl -fsSL https://sankh.dev/install.sh | sh     # or: brew install sankh-dev/tap/sankh
 ```
+
+Windows (PowerShell), then use `sankh` from Git Bash:
 
 ```powershell
-powershell -c "irm https://github.com/sankh-dev/sankh/releases/latest/download/sankh-installer.ps1 | iex"
-```
-
-Or build from source (needs Rust and Node 22):
-
-```bash
-(cd frontend && npm ci && npm run build)
-cargo install --path crates/sankh-cli
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/sankh-dev/sankh/releases/latest/download/sankh-installer.ps1 | iex"
 ```
 
 Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL.
 
-Prefer a native window? Download the [desktop app](desktop.md) for macOS,
-Windows or Linux. It is the same UI as `sankh serve`.
+Prefer a native window? The [desktop app](desktop.md) is the same UI as
+`sankh serve`, for macOS, Windows and Linux. [Install](install.md) has every
+option for the CLI and the app per OS (Homebrew, `.deb`, `.rpm`, AppImage,
+`.msi`, manual download, building from source), plus upgrading and
+uninstalling.
 
 ## Your first collection
 

@@ -46,6 +46,10 @@ all of these pass:
 - Strings may embed variables: `@expect json .owner == "$USER_ID"`.
 - Every `@expect` line is evaluated, and all must pass.
 
+In the [web UI](serve.md#running-and-responses) you don't have to type jq
+paths: run the request, hover a key in the JSON response tree and choose
+**Expect** or **Capture** to add a prefilled line to the request.
+
 ### Arrays
 
 Given this response:

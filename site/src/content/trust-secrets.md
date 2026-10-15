@@ -22,8 +22,13 @@ is the code under review, pass `--trust` or set `SANKH_TRUST=1`.
 ## Secrets
 
 - Values of variables whose names contain `TOKEN`, `SECRET`, `KEY`,
-  `PASSWORD`, `AUTH` or `COOKIE` are replaced with `***` in all output,
-  reports and UI responses, including captured values.
+  `PASSWORD`, `PASSWD`, `AUTH` or `COOKIE` (and are at least 4 characters
+  long) are replaced with `***` in `sankh run`
+  output, JUnit and JSON reports, and `sankh mcp` results, including captured
+  values.
+- The web UI and the desktop app show real values in run results, so you can
+  inspect a token you just captured. Environment editors still hide secret
+  values behind an eye toggle until you reveal them.
 - Keep secrets in `.env.local` (gitignored) or CI secrets, never in
   `environments/*.env`.
 

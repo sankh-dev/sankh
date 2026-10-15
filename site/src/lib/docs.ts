@@ -11,6 +11,11 @@ export const docPages: DocPage[] = [
 		description: 'Install Sankh, scaffold a collection, and run it.'
 	},
 	{
+		slug: 'install',
+		title: 'Install',
+		description: 'The CLI and desktop app on macOS, Linux and Windows; upgrade and uninstall.'
+	},
+	{
 		slug: 'format',
 		title: 'Collection format',
 		description: 'Folder layout, request files, annotations, and environments.'

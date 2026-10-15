@@ -39,6 +39,16 @@ conversion without a terminal:
 The destination cannot be inside, or contain, a collection that is already
 open.
 
+### Environments into an existing collection
+
+To add Postman environments to a collection you already have, choose
+**Import Postman environments…** in the collection's **⋯** menu and pick one
+or more environment exports. Before anything is written, the dialog lists per
+environment which variables will be added, updated or left unchanged.
+Secrets can go to `.env.local` instead of the committed env file. Variable
+names are renamed the same way as in a full import (`baseUrl` becomes
+`BASE_URL`).
+
 ## What gets converted
 
 | Postman | Sankh |
