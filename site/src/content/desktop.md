@@ -24,7 +24,9 @@ Or get the installer for your platform from the
 | macOS (Apple silicon) | `Sankh_<version>_aarch64.dmg` |
 | macOS (Intel) | `Sankh_<version>_x64.dmg` |
 | Windows | `Sankh_<version>_x64-setup.exe` or `Sankh_<version>_x64_en-US.msi` |
-| Linux | `Sankh_<version>_amd64.AppImage` or `Sankh_<version>_amd64.deb` |
+| Linux | `Sankh_<version>_amd64.AppImage` |
+| Linux (Debian, Ubuntu) | `Sankh_<version>_amd64.deb` |
+| Linux (Fedora, RHEL, openSUSE) | `Sankh-<version>-1.x86_64.rpm` |
 
 Each file has a matching `.sha256` checksum next to it.
 

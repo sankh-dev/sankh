@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-15
+
+### Added
+
+- **Desktop app `.rpm` package** for Fedora, RHEL, openSUSE and other
+  RPM-based Linux distributions, attached to each release next to the
+  `.deb` and AppImage.
+
 ## [0.9.0] - 2026-10-15
 
 ### Added

@@ -80,7 +80,8 @@ jobs:
           mkdir -p out
           shopt -s nullglob
           for f in "$bundle"/dmg/*.dmg "$bundle"/msi/*.msi "$bundle"/nsis/*.exe \
-                   "$bundle"/deb/*.deb "$bundle"/appimage/*.AppImage; do
+                   "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm \
+                   "$bundle"/appimage/*.AppImage; do
             cp "$f" out/
           done
           cd out

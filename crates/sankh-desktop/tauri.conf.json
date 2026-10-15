@@ -15,7 +15,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage", "msi", "nsis", "app", "dmg"],
+    "targets": ["deb", "rpm", "appimage", "msi", "nsis", "app", "dmg"],
     "category": "DeveloperTool",
     "shortDescription": "Run your APIs: a lightweight request manager",
     "longDescription": "Sankh is a very lightweight request manager. A collection is a plain folder of .sh files, each holding one curl command.",
@@ -30,6 +30,9 @@
     ],
     "linux": {
       "deb": {
+        "depends": ["curl"]
+      },
+      "rpm": {
         "depends": ["curl"]
       }
     }

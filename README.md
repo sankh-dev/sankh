@@ -33,7 +33,7 @@ sh pets/02-create.sh
 
 ```bash
 curl -fsSL https://sankh.dev/install.sh | sh                 # latest
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.0 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh
 ```
 
 Or build from source (needs Rust and Node 22):
@@ -48,7 +48,7 @@ Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL
 ### Desktop app
 
 The same UI in a native window: download the `.dmg` (macOS), `-setup.exe` or
-`.msi` (Windows), or `.AppImage` or `.deb` (Linux) from the
+`.msi` (Windows), or `.AppImage`, `.deb` or `.rpm` (Linux) from the
 [latest release](https://github.com/sankh-dev/sankh/releases/latest). It runs
 the server in-process on a random loopback port behind a per-launch token and
 opens your saved workspace, like `sankh serve`.

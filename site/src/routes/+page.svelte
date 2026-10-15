@@ -18,7 +18,7 @@
 
 	const installOptions = [
 		{ label: 'Shell (Linux, macOS)', command: INSTALL },
-		{ label: 'Pinned version', command: 'curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.0 sh' },
+		{ label: 'Pinned version', command: 'curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh' },
 		{ label: 'Homebrew', command: 'brew install sankh-dev/tap/sankh' },
 		{
 			label: 'PowerShell (Windows)',
@@ -253,7 +253,7 @@
 					<div class="caption">Desktop app</div>
 					<p>
 						Installers for macOS (<code>.dmg</code>), Windows (<code>.exe</code>, <code>.msi</code>) and
-						Linux (<code>.AppImage</code>, <code>.deb</code>). Not code signed yet; see the
+						Linux (<code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code>). Not code signed yet; see the
 						<a href={resolve('/docs/[slug]', { slug: 'desktop' })}>desktop docs</a> for first launch.
 					</p>
 				</div>
