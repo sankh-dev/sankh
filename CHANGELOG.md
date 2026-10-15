@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-15
+
+### Added
+
+- **Pick assertions and captures from the response.** The JSON response is a
+  collapsible tree; hover a key for **Expect** and **Capture** buttons. They
+  open a small form prefilled with the jq path, an operator and the current
+  value (or a capture name such as `ACCESS_TOKEN`), with a preview of the
+  `# @expect` / `# @capture` line. **Add** puts it in the open request, in
+  Form or Raw mode; save to keep it.
+- **Import Postman environments into an existing collection.** A
+  collection's **⋯** menu has **Import Postman environments…**, which
+  previews the variables added, updated and unchanged per environment before
+  writing the env files; secrets can go to `.env.local`. Keys are renamed
+  the same way as a full Postman import. API:
+  `POST /api/c/{id}/envs/import-postman`.
+- **Variable tooltips.** Hovering `$VAR` in the URL, headers or raw mode
+  shows its value and where it comes from, with an **Edit** button. The
+  quick "set variable" popover can save to the selected environment file or
+  to `.env.local`.
+- **Collapse and expand all folders.** A collection's **⋯** menu collapses
+  or expands every folder, and open/closed folders are remembered across
+  reloads.
+
+### Changed
+
+- **Secrets are shown in the web UI.** Run results in the browser (response
+  body, headers, captures, assertion messages and the log) show real values
+  instead of `***`. `sankh run`, its reports and the MCP server still mask
+  them.
+
 ## [0.8.0] - 2026-10-13
 
 ### Added
