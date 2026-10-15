@@ -8,18 +8,22 @@
 	import { StreamLanguage } from '@codemirror/language';
 	import { shell } from '@codemirror/legacy-modes/mode/shell';
 	import { sankhCompletions } from './completions';
-	import { STATUS_TEXT, needsValue, refSpans, type VarOption, type VarStatus } from './vars';
+	import { needsValue, refSpans, varTipDom, type VarInfo, type VarOption, type VarStatus } from './vars';
 
 	interface Props {
 		value: string;
 		vars?: VarOption[];
 		/** Flags `$VAR` references that still need a value. */
 		varStatus?: (name: string) => VarStatus;
+		/** Value and source shown when hovering any `$VAR` reference. */
+		varInfo?: (name: string) => VarInfo;
+		/** Selected environment, named in the hover tooltip. */
+		env?: string;
 		onsetvar?: (name: string, anchor: DOMRect) => void;
 		onchange?: (value: string) => void;
 	}
 
-	let { value = $bindable(), vars = [], varStatus, onsetvar, onchange }: Props = $props();
+	let { value = $bindable(), vars = [], varStatus, varInfo, env = '', onsetvar, onchange }: Props = $props();
 	let view: EditorView | undefined;
 
 	const recheck = StateEffect.define<null>();
@@ -45,16 +49,7 @@
 				textDecoration: 'underline wavy var(--fail)',
 				textUnderlineOffset: '3px',
 				backgroundColor: '#ff6b6b14'
-			},
-			'.cm-var-tip': {
-				display: 'flex',
-				alignItems: 'center',
-				gap: '8px',
-				padding: '6px 8px',
-				fontFamily: 'var(--sans)',
-				fontSize: '12px'
-			},
-			'.cm-var-tip button': { minHeight: '22px', fontSize: '11px', padding: '0 8px' }
+			}
 		},
 		{ dark: true }
 	);
@@ -90,25 +85,22 @@
 	);
 
 	const varTips = hoverTooltip((v, pos) => {
-		const hit = flagged(v.state.doc.toString()).find((r) => pos >= r.from && pos <= r.to);
+		const hit = refSpans(v.state.doc.toString()).find((r) => pos >= r.from && pos <= r.to);
 		if (!hit) return null;
+		const info: VarInfo = varInfo?.(hit.name) ?? {
+			name: hit.name,
+			value: null,
+			source: null,
+			status: varStatus?.(hit.name) ?? 'ok'
+		};
+		if (!varInfo && !needsValue(info.status)) return null;
 		return {
 			pos: hit.from,
 			end: hit.to,
 			above: true,
 			create() {
-				const dom = document.createElement('div');
-				dom.className = 'cm-var-tip';
-				const label = document.createElement('span');
-				label.textContent = `${hit.name}: ${STATUS_TEXT[hit.status]}`;
-				dom.append(label);
-				if (onsetvar) {
-					const btn = document.createElement('button');
-					btn.textContent = 'Set value…';
-					btn.onclick = () => onsetvar?.(hit.name, btn.getBoundingClientRect());
-					dom.append(btn);
-				}
-				return { dom };
+				const edit = onsetvar ? (anchor: DOMRect) => onsetvar?.(hit.name, anchor) : undefined;
+				return { dom: varTipDom(info, env, edit) };
 			}
 		};
 	});

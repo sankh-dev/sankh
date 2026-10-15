@@ -294,6 +294,7 @@ async fn reports_unset_and_missing_variables() {
             "environments/dev.env",
             "BASE_URL=http://x\nAPI_KEY=changeme\nEMPTY=\n",
         ),
+        (".env.local", "LOCAL_ONLY=1\n"),
         (
             "01-login.sh",
             "# @capture TOKEN=.token\ncurl \"$BASE_URL/login\" -H \"X-Key: $API_KEY\"\n",
@@ -314,6 +315,16 @@ async fn reports_unset_and_missing_variables() {
         .map(|v| v["name"].as_str().unwrap())
         .collect();
     assert_eq!(unset, ["API_KEY", "EMPTY"]);
+    let source = |name: &str| {
+        body["vars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .map(|v| v["source"].clone())
+    };
+    assert_eq!(source("BASE_URL"), Some(json!("file")));
+    assert_eq!(source("LOCAL_ONLY"), Some(json!("local")));
     assert_eq!(
         body["refs"],
         json!({
@@ -428,8 +439,15 @@ async fn untrusted_runs_are_refused_then_stream_after_trust() {
     );
     assert_eq!(events[0]["collection"], a.as_str());
     assert_eq!(events[5]["summary"]["passed"], 2);
-    let all = serde_json::to_string(&events).unwrap();
-    assert!(!all.contains("abcd-1234-token"), "captured token leaked");
+    // The local UI shows real values; only CLI and MCP output is masked.
+    let login = &events[2]["result"];
+    assert_eq!(login["captures"][0]["value"], "abcd-1234-token");
+    assert!(
+        login["response"]["body"]
+            .as_str()
+            .unwrap()
+            .contains("abcd-1234-token")
+    );
 
     // Captures persist for the session: running 02 alone still has TOKEN.
     let (_, events, _) = run(&s, a, json!({ "path": "02-me.sh", "env": "dev" })).await;
@@ -700,6 +718,52 @@ async fn imports_postman_with_preview_then_write() {
     let (status, err) = call(&s, "POST", "/api/import/postman", &[], Some(write)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(err["error"].as_str().unwrap().contains("not empty"));
+}
+
+#[tokio::test]
+async fn imports_postman_environments_into_a_collection() {
+    let d = folder(&[
+        ("sankh.toml", "name = \"P\"\n"),
+        (
+            "environments/petstore-ci.env",
+            "# mine\nPET_USER=old\nKEEP=1\n",
+        ),
+    ]);
+    let (s, cid) = state(&d, None);
+    let url = format!("/api/c/{cid}/envs/import-postman");
+    let body = json!({ "envs": [postman_fixture("petstore.postman_environment.json")] });
+
+    let (status, preview) = call(&s, "POST", &url, &[], Some(body.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["envs"][0]["env"], "petstore-ci");
+    assert_eq!(preview["envs"][0]["status"], "merge");
+    assert_eq!(preview["envs"][0]["updated"], json!(["PET_USER"]));
+    assert_eq!(preview["secrets"], json!(["PET_PASSWORD"]));
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("environments/petstore-ci.env")).unwrap(),
+        "# mine\nPET_USER=old\nKEEP=1\n",
+        "preview must not write"
+    );
+
+    let mut write = body.clone();
+    write["write"] = json!(true);
+    write["secrets_to_local"] = json!(true);
+    let (status, done) = call(&s, "POST", &url, &[], Some(write)).await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("environments/petstore-ci.env")).unwrap(),
+        "# mine\nPET_USER=ci\nKEEP=1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".env.local")).unwrap(),
+        "PET_PASSWORD=demo-password\n"
+    );
+    let (_, envs) = call(&s, "GET", &format!("/api/c/{cid}/envs"), &[], None).await;
+    assert_eq!(envs["default"], "petstore-ci");
+
+    let bad = json!({ "envs": [postman_fixture("petstore.postman_collection.json")] });
+    let (status, _) = call(&s, "POST", &url, &[], Some(bad)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

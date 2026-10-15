@@ -1,13 +1,16 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import ResponseBody from './ResponseBody.svelte';
+	import type { AnnotationKind } from './jsonpath';
 	import type { RequestResult } from './types';
 
 	interface Props {
 		result: RequestResult | null;
+		/** Adds an `@expect` / `@capture` line to the open request. */
+		onadd?: (kind: AnnotationKind, line: string) => void;
 	}
 
-	let { result }: Props = $props();
+	let { result, onadd }: Props = $props();
 	let tab = $state<'body' | 'headers' | 'log'>('body');
 
 	function formatSize(n: number) {
@@ -73,7 +76,7 @@
 			</div>
 			<div class="content">
 				{#if tab === 'body'}
-					<ResponseBody response={result.response} />
+					<ResponseBody response={result.response} {onadd} />
 					{#if result.response.body_truncated}<p class="meta">Body truncated for display.</p>{/if}
 				{:else if tab === 'headers'}
 					<table>

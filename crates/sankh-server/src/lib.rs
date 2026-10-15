@@ -122,6 +122,10 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/parse", post(api::parse))
         .route("/envs", get(api::envs).post(api::create_env))
         .route(
+            "/envs/import-postman",
+            post(api::import_postman_envs).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
+        .route(
             "/envs/{name}",
             get(api::env_vars)
                 .patch(api::rename_env)

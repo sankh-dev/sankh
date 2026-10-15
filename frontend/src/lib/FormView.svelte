@@ -3,8 +3,8 @@
 	import Icon from './Icon.svelte';
 	import VarChips from './VarChips.svelte';
 	import { formatJson } from './format';
-	import { varSuggest } from './suggest';
-	import { needsValue, refs, type VarOption, type VarStatus } from './vars';
+	import { varHover, varSuggest } from './suggest';
+	import { needsValue, refs, type VarInfo, type VarOption, type VarStatus } from './vars';
 	import type { RequestForm } from './types';
 
 	interface Props {
@@ -17,12 +17,26 @@
 		/** Variables offered after `$` / `${`. */
 		vars: VarOption[];
 		varStatus: (name: string) => VarStatus;
+		/** Value and source of a variable, shown when hovering `$VAR` in the URL or a header. */
+		varInfo: (name: string) => VarInfo;
+		env: string;
 		onsetvar: (name: string, anchor: DOMRect) => void;
 	}
 
-	let { form = $bindable(), onedit, modeSwitch, actions, vars, varStatus, onsetvar }: Props = $props();
+	let {
+		form = $bindable(),
+		onedit,
+		modeSwitch,
+		actions,
+		vars,
+		varStatus,
+		varInfo,
+		env,
+		onsetvar
+	}: Props = $props();
 
 	const suggest = varSuggest(() => vars);
+	const hover = varHover(() => ({ info: varInfo, env, onedit: onsetvar }));
 
 	type Tab = 'headers' | 'body' | 'assertions' | 'captures' | 'settings';
 	const TAB_KEY = 'sankh-form-tab';
@@ -60,6 +74,10 @@
 		captures: 'Captures',
 		settings: 'Settings'
 	};
+
+	export function showTab(t: Tab) {
+		tab = t;
+	}
 
 	function flaggedIn(text: string) {
 		return refs(text).some((n) => needsValue(varStatus(n)));
@@ -260,6 +278,7 @@
 					aria-label="URL"
 					title="$VAR expands from the environment; \$ is a literal dollar sign"
 					{@attach suggest}
+					{@attach hover}
 				/>
 			</div>
 			{@render actions()}
@@ -305,6 +324,7 @@
 							placeholder="Value"
 							aria-label="Header value"
 							{@attach suggest}
+							{@attach hover}
 						/>
 						<button
 							class="icon-btn del"

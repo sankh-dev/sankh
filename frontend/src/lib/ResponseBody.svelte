@@ -1,16 +1,30 @@
 <script lang="ts">
+	import AnnotatePopover from './AnnotatePopover.svelte';
+	import JsonTree from './JsonTree.svelte';
 	import { bodyKind, formatXml, mediaType, prettyJson } from './body';
+	import type { AnnotationKind, JsonPick } from './jsonpath';
 	import type { ResponseView } from './types';
 
 	interface Props {
 		response: ResponseView;
+		/** Adds an `@expect` / `@capture` line to the open request; enables pick buttons in the JSON tree. */
+		onadd?: (kind: AnnotationKind, line: string) => void;
 	}
 
-	let { response }: Props = $props();
+	let { response, onadd }: Props = $props();
 	let raw = $state(false);
 	let natural = $state<{ width: number; height: number } | null>(null);
+	let picked = $state<JsonPick | null>(null);
 
 	let kind = $derived(bodyKind(response.headers, response.body));
+	let parsed = $derived.by(() => {
+		if (kind !== 'json' || response.body_truncated) return undefined;
+		try {
+			return { value: JSON.parse(response.body) as unknown };
+		} catch {
+			return undefined;
+		}
+	});
 	let formatted = $derived.by(() => {
 		if (kind === 'json') return prettyJson(response.body);
 		if (kind === 'xml') return formatXml(response.body);
@@ -64,10 +78,18 @@
 		</div>
 	{:else if kind === 'html'}
 		<iframe sandbox="" srcdoc={response.body} title="HTML preview" referrerpolicy="no-referrer"></iframe>
+	{:else if parsed}
+		<JsonTree data={parsed.value} onpick={onadd ? (p) => (picked = p) : undefined} />
 	{:else}
 		<pre class="mono">{formatted}</pre>
 	{/if}
 </div>
+
+{#if picked && onadd}
+	{#key picked}
+		<AnnotatePopover pick={picked} {onadd} onclose={() => (picked = null)} />
+	{/key}
+{/if}
 
 <style>
 	.body {

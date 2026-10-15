@@ -215,6 +215,70 @@ textarea:focus {
 	color: var(--info);
 }
 
+.var-tip {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	max-width: 360px;
+	padding: 6px 8px;
+	font: 12px var(--sans);
+}
+
+.var-tip.floating {
+	position: fixed;
+	z-index: 40;
+	background: var(--panel-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+}
+
+.var-tip-head {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	width: 100%;
+}
+
+.var-tip-name {
+	font: 600 12px var(--mono);
+	color: var(--text);
+}
+
+.var-tip-src {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+.var-tip-src.unset {
+	color: var(--warn);
+}
+
+.var-tip-src.missing {
+	color: var(--fail);
+}
+
+.var-tip-value {
+	font: 12px var(--mono);
+	color: var(--text);
+	word-break: break-all;
+	max-height: 80px;
+	overflow: hidden;
+}
+
+.var-tip-value.none {
+	color: var(--muted);
+	font-family: var(--sans);
+}
+
+.var-tip button {
+	min-height: 22px;
+	font-size: 11px;
+	padding: 0 8px;
+}
+
 code,
 pre,
 .mono {

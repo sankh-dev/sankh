@@ -183,32 +183,78 @@ pub fn read(collection: &str, environments: &[&str]) -> Result<ImportedCollectio
         }
     } else {
         for (i, text) in environments.iter().enumerate() {
-            let env: PmEnvironment = serde_json::from_str(text).map_err(|e| {
-                ImportError::Invalid(format!(
-                    "environment #{}: not a Postman environment: {e}",
-                    i + 1
-                ))
-            })?;
-            let values: Vec<(String, String, bool)> = env
-                .values
-                .iter()
-                .filter(|v| v.enabled != Some(false))
-                .filter_map(|v| {
-                    Some((
-                        v.key.clone()?,
-                        value_str(v.value.as_ref()),
-                        v.kind.as_deref() == Some("secret"),
-                    ))
-                })
-                .collect();
-            let name = env
-                .name
-                .filter(|n| !n.trim().is_empty())
-                .unwrap_or_else(|| format!("env-{}", i + 1));
+            let (name, values) = parse_environment(text, i)?;
             r.environment(&name, &collection_vars, &values);
         }
     }
     Ok(r.out)
+}
+
+/// Postman environments converted on their own, for an existing collection.
+#[derive(Debug, Clone, Default)]
+pub struct ImportedEnvs {
+    pub environments: Vec<ImportedEnv>,
+    pub renamed: Vec<Rename>,
+    /// Secrets left out of the env files: name and dotenv-ready value, first
+    /// environment wins when several define the same name.
+    pub secrets: Vec<(String, String)>,
+}
+
+/// Reads Postman environment exports without a collection. Keys are renamed
+/// the same way as in [`read`], so they match an earlier full import.
+pub fn read_envs(environments: &[&str]) -> Result<ImportedEnvs, ImportError> {
+    if environments.is_empty() {
+        return Err(ImportError::Invalid("no environments given".into()));
+    }
+    let mut r = Reader::default();
+    for (i, text) in environments.iter().enumerate() {
+        let (name, values) = parse_environment(text, i)?;
+        r.environment(&name, &[], &values);
+    }
+    Ok(ImportedEnvs {
+        environments: r.out.environments,
+        renamed: r.out.vars.renames(),
+        secrets: r.secrets,
+    })
+}
+
+/// `(key, value, secret)` of one environment or collection variable.
+type EnvEntry = (String, String, bool);
+
+/// Name and enabled entries of one environment export.
+fn parse_environment(text: &str, i: usize) -> Result<(String, Vec<EnvEntry>), ImportError> {
+    let json: Value = serde_json::from_str(text).map_err(|e| {
+        ImportError::Invalid(format!("environment #{}: not valid JSON: {e}", i + 1))
+    })?;
+    if json.get("info").is_some() || json.get("values").is_none() {
+        return Err(ImportError::Invalid(format!(
+            "environment #{}: not a Postman environment export (no `values`)",
+            i + 1
+        )));
+    }
+    let env: PmEnvironment = serde_json::from_value(json).map_err(|e| {
+        ImportError::Invalid(format!(
+            "environment #{}: not a Postman environment: {e}",
+            i + 1
+        ))
+    })?;
+    let values = env
+        .values
+        .iter()
+        .filter(|v| v.enabled != Some(false))
+        .filter_map(|v| {
+            Some((
+                v.key.clone()?,
+                value_str(v.value.as_ref()),
+                v.kind.as_deref() == Some("secret"),
+            ))
+        })
+        .collect();
+    let name = env
+        .name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| format!("env-{}", i + 1));
+    Ok((name, values))
 }
 
 #[derive(Default)]
@@ -218,6 +264,8 @@ struct Reader {
     credentials: Vec<(String, String)>,
     /// Items whose own auth had empty credentials and fell back to the parent's.
     blank_auth: usize,
+    /// Secret environment values kept out of env files (see [`ImportedEnvs::secrets`]).
+    secrets: Vec<(String, String)>,
 }
 
 impl Reader {
@@ -636,6 +684,10 @@ impl Reader {
                         .into()
                 };
                 self.out.add_placeholder(&renamed, &note);
+                if !self.secrets.iter().any(|(k, _)| *k == renamed) {
+                    let value = self.out.vars.env_value(&value);
+                    self.secrets.push((renamed, value));
+                }
                 continue;
             }
             let value = self.out.vars.env_value(&value);

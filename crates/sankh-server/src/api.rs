@@ -565,10 +565,18 @@ pub async fn env_vars(
         let unset = env.status(k, &captured) == env::VarStatus::Unset;
         json!({ "name": k, "value": redactor.display_var(k, v), "source": source, "unset": unset })
     };
+    let local = env::read_env_file(&c.root.join(env::ENV_LOCAL)).unwrap_or_default();
     let mut vars: Vec<Value> = env
         .file_vars
         .iter()
-        .map(|(k, v)| entry(k, v, "file"))
+        .map(|(k, v)| {
+            let source = if local.contains_key(k) {
+                "local"
+            } else {
+                "file"
+            };
+            entry(k, v, source)
+        })
         .collect();
     vars.extend(env.captures.iter().map(|(k, v)| entry(k, v, "capture")));
     let refs: serde_json::Map<String, Value> = referenced
@@ -696,6 +704,36 @@ pub async fn delete_env(
         .remove(&(cid.clone(), name.clone()));
     env_changed(&state, &cid);
     Ok(Json(json!({ "deleted": name })))
+}
+
+#[derive(Deserialize)]
+pub struct PostmanEnvsBody {
+    /// Texts of exported Postman environments.
+    envs: Vec<String>,
+    /// Also write secret values to `.env.local`.
+    #[serde(default)]
+    secrets_to_local: bool,
+    /// Write the files; otherwise only preview.
+    #[serde(default)]
+    write: bool,
+}
+
+/// Merges Postman environment exports into the collection's environments.
+/// Without `write` it returns what each file would gain or change.
+pub async fn import_postman_envs(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Json(body): Json<PostmanEnvsBody>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let texts: Vec<&str> = body.envs.iter().map(String::as_str).collect();
+    let imported = import::postman::read_envs(&texts).map_err(|e| bad(e.to_string()))?;
+    let plan = import::plan_env_import(&c, &imported)?;
+    if body.write {
+        import::write_env_import(&c, &plan, body.secrets_to_local)?;
+        env_changed(&state, &cid);
+    }
+    Ok(Json(json!(plan)))
 }
 
 #[derive(Deserialize)]
@@ -840,6 +878,7 @@ pub async fn start_run(
     tokio::task::spawn_blocking(move || {
         let mut options = RunOptions::for_collection(&collection);
         options.cancel = handle.cancel.clone();
+        options.reveal_secrets = true;
         let mut ctx = RunContext::new(env, options);
         let mut results = Vec::new();
         for file in &files {

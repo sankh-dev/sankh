@@ -1,9 +1,12 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import Tree from './Tree.svelte';
+	import { isOpen, toggle } from './folders.svelte';
 	import type { TreeNode } from './types';
 
 	interface Props {
+		/** Collection id, which keys the folders' open state. */
+		cid: string;
 		node: TreeNode;
 		selected: string | null;
 		running: string | null;
@@ -14,13 +17,13 @@
 		onnew: (folder: string) => void;
 	}
 
-	let { node, selected, running, outcomes, depth = 0, onselect, onrun, onnew }: Props = $props();
-	let open = $state(true);
+	let { cid, node, selected, running, outcomes, depth = 0, onselect, onrun, onnew }: Props = $props();
+	let open = $derived(isOpen(cid, node.path));
 </script>
 
 {#if node.type === 'folder'}
 	<div class="row folder" style:--depth={depth}>
-		<button class="toggle" onclick={() => (open = !open)} aria-expanded={open}>
+		<button class="toggle" onclick={() => toggle(cid, node.path)} aria-expanded={open}>
 			<Icon name="chevron" size={12} class={open ? 'chev open' : 'chev'} />
 			<span class="label">{node.name}</span>
 		</button>
@@ -35,7 +38,7 @@
 	</div>
 	{#if open}
 		{#each node.children as child (child.path)}
-			<Tree node={child} {selected} {running} {outcomes} depth={depth + 1} {onselect} {onrun} {onnew} />
+			<Tree {cid} node={child} {selected} {running} {outcomes} depth={depth + 1} {onselect} {onrun} {onnew} />
 		{/each}
 	{/if}
 {:else}

@@ -1,5 +1,5 @@
 import type { Attachment } from 'svelte/attachments';
-import type { VarOption } from './vars';
+import { refSpans, varTipDom, type VarInfo, type VarOption } from './vars';
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
@@ -188,6 +188,126 @@ export function varSuggest(options: () => VarOption[]): Attachment<Field> {
 			node.removeEventListener('input', oninput);
 			node.removeEventListener('keydown', onkeydown);
 			node.removeEventListener('blur', close);
+			document.removeEventListener('scroll', onscroll, true);
+		};
+	};
+}
+
+export interface HoverOptions {
+	info: (name: string) => VarInfo;
+	/** Selected environment, named in the tooltip. */
+	env: string;
+	onedit?: (name: string, anchor: DOMRect) => void;
+}
+
+const SHOW_DELAY = 300;
+const HIDE_DELAY = 200;
+
+/**
+ * Shows the value of the `$VAR` reference under the mouse in a single-line
+ * field, with an Edit button. Offsets are measured with the field's font.
+ */
+export function varHover(options: () => HoverOptions): Attachment<HTMLInputElement> {
+	return (el) => {
+		const measure = document.createElement('canvas').getContext('2d');
+		let tip: HTMLElement | null = null;
+		/** `name:from` of the reference the tooltip is for. */
+		let shown: string | null = null;
+		let showTimer: ReturnType<typeof setTimeout> | undefined;
+		let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+		function spanAt(x: number) {
+			if (!measure || !el.value.includes('$')) return null;
+			const style = getComputedStyle(el);
+			measure.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+			const box = el.getBoundingClientRect();
+			const origin = box.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft) - el.scrollLeft;
+			for (const r of refSpans(el.value)) {
+				const left = origin + measure.measureText(el.value.slice(0, r.from)).width;
+				const right = origin + measure.measureText(el.value.slice(0, r.to)).width;
+				if (x >= left && x <= right) return { ...r, left, right };
+			}
+			return null;
+		}
+
+		/** The field's own `title`, removed while the tooltip shows so the two do not overlap. */
+		let title: string | null = null;
+
+		function hide() {
+			clearTimeout(showTimer);
+			clearTimeout(hideTimer);
+			tip?.remove();
+			tip = null;
+			shown = null;
+			if (title !== null) el.title = title;
+			title = null;
+		}
+
+		function hideSoon() {
+			clearTimeout(showTimer);
+			clearTimeout(hideTimer);
+			hideTimer = setTimeout(hide, HIDE_DELAY);
+		}
+
+		function show(name: string, left: number) {
+			hide();
+			const o = options();
+			const onedit = o.onedit;
+			const dom = varTipDom(
+				o.info(name),
+				o.env,
+				onedit &&
+					((anchor) => {
+						hide();
+						onedit(name, anchor);
+					})
+			);
+			dom.classList.add('floating');
+			dom.setAttribute('role', 'tooltip');
+			dom.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+			dom.addEventListener('mouseleave', hideSoon);
+			document.body.append(dom);
+			title = el.title;
+			el.title = '';
+			const box = el.getBoundingClientRect();
+			const above = box.top - dom.offsetHeight - 4;
+			dom.style.left = `${Math.max(4, Math.min(left, window.innerWidth - dom.offsetWidth - 4))}px`;
+			dom.style.top = `${above >= 4 ? above : box.bottom + 4}px`;
+			tip = dom;
+		}
+
+		function onmousemove(e: MouseEvent) {
+			const hit = spanAt(e.clientX);
+			if (!hit) {
+				if (tip) hideSoon();
+				else clearTimeout(showTimer);
+				return;
+			}
+			const key = `${hit.name}:${hit.from}`;
+			clearTimeout(hideTimer);
+			if (key === shown) return;
+			clearTimeout(showTimer);
+			showTimer = setTimeout(() => {
+				show(hit.name, hit.left);
+				shown = key;
+			}, SHOW_DELAY);
+		}
+
+		function onscroll(e: Event) {
+			if (tip && !tip.contains(e.target as Node)) hide();
+		}
+
+		el.addEventListener('mousemove', onmousemove);
+		el.addEventListener('mouseleave', hideSoon);
+		el.addEventListener('input', hide);
+		el.addEventListener('keydown', hide);
+		document.addEventListener('scroll', onscroll, true);
+		return () => {
+			hide();
+			el.removeEventListener('mousemove', onmousemove);
+			el.removeEventListener('mouseleave', hideSoon);
+			el.removeEventListener('input', hide);
+			el.removeEventListener('keydown', hide);
 			document.removeEventListener('scroll', onscroll, true);
 		};
 	};

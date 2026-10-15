@@ -16,10 +16,12 @@
 		/** Environment selected for this collection, opened first. */
 		current: string;
 		onchanged: (change: EnvChange) => Promise<void>;
+		/** Opens the Postman environment import for this collection. */
+		onimport: () => void;
 		onclose: () => void;
 	}
 
-	let { cid, collection, current, onchanged, onclose }: Props = $props();
+	let { cid, collection, current, onchanged, onimport, onclose }: Props = $props();
 
 	/** Not a valid environment name, so it cannot clash with one. */
 	const LOCAL = ' local';
@@ -294,6 +296,9 @@
 					</form>
 				{:else}
 					<button class="new" onclick={startCreate} disabled={busy}><Icon name="plus" size={12} />New environment</button>
+					<button class="new" onclick={() => confirmDiscard() && onimport()} disabled={busy}>
+						<Icon name="upload" size={12} />Import from Postman…
+					</button>
 				{/if}
 
 				<p class="group local-group">Local overrides</p>

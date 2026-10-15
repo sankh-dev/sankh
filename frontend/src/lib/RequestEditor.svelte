@@ -5,8 +5,9 @@
 	import Icon from './Icon.svelte';
 	import VarChips from './VarChips.svelte';
 	import { api } from './api';
+	import type { AnnotationKind } from './jsonpath';
 	import type { Diagnostic, RequestDoc, RequestForm } from './types';
-	import type { VarOption, VarStatus } from './vars';
+	import type { VarInfo, VarOption, VarStatus } from './vars';
 
 	interface Props {
 		cid: string;
@@ -15,6 +16,10 @@
 		vars: VarOption[];
 		/** Status of a referenced variable in the selected environment. */
 		varStatus: (name: string) => VarStatus;
+		/** Value and source of a variable, for hover tooltips. */
+		varInfo: (name: string) => VarInfo;
+		/** Selected environment of the collection. */
+		env: string;
 		/** Opens the quick "set this variable" popover. */
 		onsetvar: (name: string, anchor: DOMRect) => void;
 		onsave: (content: string) => Promise<RequestDoc>;
@@ -35,6 +40,8 @@
 		doc,
 		vars,
 		varStatus,
+		varInfo,
+		env,
 		onsetvar,
 		onsave,
 		onrun,
@@ -56,6 +63,7 @@
 	let diagnostics = $state<Diagnostic[]>(initial.request.diagnostics);
 	let rawReason = $state<string | null>(initial.request.raw_reason);
 	let notice = $state<string | null>(null);
+	let formView = $state<ReturnType<typeof FormView>>();
 
 	async function currentContent(): Promise<string> {
 		if (mode === 'form' && form) {
@@ -112,6 +120,24 @@
 	export async function saveAndRun() {
 		if (dirty) await save();
 		onrun();
+	}
+
+	/** Appends `@expect <line>` / `@capture <line>` to the request, unsaved. */
+	export function addAnnotation(kind: AnnotationKind, line: string) {
+		if (mode === 'form' && form) {
+			const list = kind === 'expect' ? form.expects : form.captures;
+			if (!list.includes(line)) list.push(line);
+			formView?.showTab(kind === 'expect' ? 'assertions' : 'captures');
+		} else {
+			const lines = content.split('\n');
+			const annotation = `# @${kind} ${line}`;
+			if (lines.includes(annotation)) return;
+			let end = 0;
+			while (end < lines.length && lines[end].trim().startsWith('#')) end++;
+			lines.splice(end, 0, annotation);
+			content = lines.join('\n');
+		}
+		dirty = true;
 	}
 
 	/** Copies the curl command without the annotation header. */
@@ -172,7 +198,18 @@
 
 	<div class="body">
 		{#if mode === 'form' && form}
-			<FormView bind:form onedit={() => (dirty = true)} {modeSwitch} {actions} {vars} {varStatus} {onsetvar} />
+			<FormView
+				bind:this={formView}
+				bind:form
+				onedit={() => (dirty = true)}
+				{modeSwitch}
+				{actions}
+				{vars}
+				{varStatus}
+				{varInfo}
+				{env}
+				{onsetvar}
+			/>
 		{:else}
 			<div class="raw-bar">
 				{@render modeSwitch()}
@@ -181,7 +218,15 @@
 				{@render actions()}
 			</div>
 			<div class="code">
-				<CodeEditor bind:value={content} {vars} {varStatus} {onsetvar} onchange={() => (dirty = true)} />
+				<CodeEditor
+					bind:value={content}
+					{vars}
+					{varStatus}
+					{varInfo}
+					{env}
+					{onsetvar}
+					onchange={() => (dirty = true)}
+				/>
 			</div>
 		{/if}
 	</div>

@@ -367,8 +367,13 @@ pub fn read_env_raw(path: &Path) -> Result<Vec<(String, String)>, EnvEditError> 
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
+    Ok(parse_env_raw(&text))
+}
+
+/// Variables of dotenv text, as [`read_env_raw`] returns them.
+pub fn parse_env_raw(text: &str) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
-    for line in parse_lines(&text) {
+    for line in parse_lines(text) {
         if let EnvLine::Var { key, value, .. } = line {
             match out.iter_mut().find(|(k, _)| *k == key) {
                 Some(e) => e.1 = value,
@@ -376,7 +381,39 @@ pub fn read_env_raw(path: &Path) -> Result<Vec<(String, String)>, EnvEditError> 
             }
         }
     }
-    Ok(out)
+    out
+}
+
+/// Result of [`merge_env_vars`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnvMerge {
+    pub vars: Vec<(String, String)>,
+    pub added: Vec<String>,
+    pub updated: Vec<String>,
+    pub unchanged: usize,
+}
+
+/// Overlays `incoming` on `existing`: existing keys keep their position and
+/// take the incoming value, new keys are appended in order.
+pub fn merge_env_vars(existing: &[(String, String)], incoming: &[(String, String)]) -> EnvMerge {
+    let mut out = EnvMerge {
+        vars: existing.to_vec(),
+        ..EnvMerge::default()
+    };
+    for (k, v) in incoming {
+        match out.vars.iter_mut().find(|(ek, _)| ek == k) {
+            Some(e) if e.1 == *v => out.unchanged += 1,
+            Some(e) => {
+                e.1 = v.clone();
+                out.updated.push(k.clone());
+            }
+            None => {
+                out.vars.push((k.clone(), v.clone()));
+                out.added.push(k.clone());
+            }
+        }
+    }
+    out
 }
 
 /// Replaces the variables of a dotenv file, keeping comments, blank lines and
@@ -572,6 +609,26 @@ mod tests {
             write_env_file(&path, &[("1X".into(), String::new())]),
             Err(EnvEditError::BadVarName(_))
         ));
+    }
+
+    #[test]
+    fn merges_vars_in_place() {
+        let kv = |k: &str, v: &str| (k.to_string(), v.to_string());
+        let m = merge_env_vars(
+            &[kv("A", "1"), kv("B", "2"), kv("C", "3")],
+            &[kv("B", "2"), kv("C", "x"), kv("D", "4")],
+        );
+        assert_eq!(
+            m.vars,
+            vec![kv("A", "1"), kv("B", "2"), kv("C", "x"), kv("D", "4")]
+        );
+        assert_eq!(m.added, vec!["D"]);
+        assert_eq!(m.updated, vec!["C"]);
+        assert_eq!(m.unchanged, 1);
+        assert_eq!(
+            parse_env_raw("# c\nX=\"${A}/v\"\nY='a$b'\nX=2\n"),
+            vec![kv("X", "2"), kv("Y", "a\\$b")]
+        );
     }
 
     #[test]

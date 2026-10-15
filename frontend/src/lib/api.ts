@@ -2,6 +2,7 @@ import type {
 	CollectionInfo,
 	DirListing,
 	EnvFileVar,
+	EnvImportPlan,
 	EnvVars,
 	Info,
 	PostmanImported,
@@ -114,6 +115,14 @@ export const api = {
 	envLocal: (cid: string) => call<{ vars: EnvFileVar[] }>('GET', `${c(cid)}/env-local`),
 	saveEnvLocal: (cid: string, vars: EnvFileVar[]) =>
 		call<{ vars: EnvFileVar[] }>('PUT', `${c(cid)}/env-local`, { vars }),
+	previewPostmanEnvs: (cid: string, envs: string[]) =>
+		call<EnvImportPlan>('POST', `${c(cid)}/envs/import-postman`, { envs, write: false }),
+	importPostmanEnvs: (cid: string, envs: string[], secretsToLocal: boolean) =>
+		call<EnvImportPlan>('POST', `${c(cid)}/envs/import-postman`, {
+			envs,
+			secrets_to_local: secretsToLocal,
+			write: true
+		}),
 	clearCaptures: (cid: string, env: string) =>
 		call<unknown>('DELETE', `${c(cid)}/captures?env=${encodeURIComponent(env || '_')}`),
 	trust: (cid: string) => call<TrustStatus>('POST', `${c(cid)}/trust`),

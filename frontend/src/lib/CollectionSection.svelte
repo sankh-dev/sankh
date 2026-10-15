@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import Icon from './Icon.svelte';
 	import Menu, { type MenuItem } from './Menu.svelte';
 	import Tree from './Tree.svelte';
+	import { anyCollapsed, collapseAll, expandAll, hasFolders, isOpen, toggle } from './folders.svelte';
 	import type { CollectionInfo, TreeNode } from './types';
 
 	interface Props {
@@ -20,6 +20,7 @@
 		onnew: (folder: string) => void;
 		onenv: (env: string) => void;
 		onmanageenvs: () => void;
+		onimportenvs: () => void;
 		onclearcaptures: () => void;
 		onunlink: () => void;
 		/** Opens the folder in the file manager; absent when the server is remote. */
@@ -40,22 +41,29 @@
 		onnew,
 		onenv,
 		onmanageenvs,
+		onimportenvs,
 		onclearcaptures,
 		onunlink,
 		onreveal
 	}: Props = $props();
 
-	const COLLAPSED_KEY = (id: string) => `sankh-collapsed:${id}`;
-	// Sections are keyed by collection id, so the id never changes here.
-	let open = $state(untrack(() => localStorage.getItem(COLLAPSED_KEY(col.id)) === null));
+	let open = $derived(isOpen(col.id, ''));
 	let trusted = $derived(col.trust?.state === 'trusted');
 	let children = $derived(tree?.type === 'folder' ? tree.children : []);
 	let menu = $derived.by(() => {
 		const items: MenuItem[] = [];
 		if (!col.missing) {
 			if (onreveal) items.push({ label: 'Open folder', icon: 'folder', onselect: onreveal });
+			if (hasFolders(tree)) {
+				items.push(
+					anyCollapsed([col.id])
+						? { label: 'Expand all folders', icon: 'expand', onselect: () => expandAll(col.id) }
+						: { label: 'Collapse all folders', icon: 'collapse', onselect: () => collapseAll(col.id, tree) }
+				);
+			}
 			items.push(
 				{ label: 'Manage environments…', icon: 'sliders', onselect: onmanageenvs },
+				{ label: 'Import Postman environments…', icon: 'upload', onselect: onimportenvs },
 				{ label: 'Clear captures', icon: 'eraser', hint: env || undefined, onselect: onclearcaptures }
 			);
 		}
@@ -65,16 +73,11 @@
 		return items;
 	});
 
-	function toggle() {
-		open = !open;
-		if (open) localStorage.removeItem(COLLAPSED_KEY(col.id));
-		else localStorage.setItem(COLLAPSED_KEY(col.id), '1');
-	}
 </script>
 
 <section class={['collection', col.missing && 'missing']}>
 	<div class="head">
-		<button class="toggle" onclick={toggle} aria-expanded={open} title={col.error ?? col.root}>
+		<button class="toggle" onclick={() => toggle(col.id, '')} aria-expanded={open} title={col.error ?? col.root}>
 			<Icon name="chevron" size={12} class={open ? 'chev open' : 'chev'} />
 			<span class="name">{col.name}</span>
 			{#if col.missing}
@@ -124,7 +127,7 @@
 			</select>
 		</div>
 		{#each children as child (child.path)}
-			<Tree node={child} {selected} {running} {outcomes} depth={1} {onselect} {onrun} {onnew} />
+			<Tree cid={col.id} node={child} {selected} {running} {outcomes} depth={1} {onselect} {onrun} {onnew} />
 		{:else}
 			<p class="empty">No requests yet.</p>
 		{/each}

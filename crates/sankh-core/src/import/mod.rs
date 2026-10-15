@@ -5,11 +5,14 @@
 //! the same serializer the UI uses, and reports everything that could not be
 //! converted exactly.
 
+pub mod env_merge;
 pub mod postman;
 mod postman_script;
 pub mod writer;
 
 use crate::request::CurlCommand;
+pub use env_merge::{EnvImportPlan, plan_env_import, write_env_import};
+pub use postman::ImportedEnvs;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};

@@ -196,7 +196,8 @@ export interface RunState {
 export interface EnvVar {
 	name: string;
 	value: string;
-	source: 'file' | 'capture';
+	/** `file` is the environment file, `local` is `.env.local`. */
+	source: 'file' | 'local' | 'capture';
 	/** Empty or the import placeholder (`changeme`), and not set elsewhere. */
 	unset: boolean;
 }
@@ -205,6 +206,27 @@ export interface EnvVars {
 	vars: EnvVar[];
 	/** Status of every variable the collection's requests reference. */
 	refs: Record<string, 'ok' | 'unset' | 'missing' | 'runtime'>;
+}
+
+/** What importing one Postman environment does to its file. */
+export interface EnvFilePlan {
+	/** Name in the Postman export. */
+	source: string;
+	env: string;
+	file: string;
+	status: 'new' | 'merge';
+	added: string[];
+	updated: string[];
+	unchanged: number;
+}
+
+export interface EnvImportPlan {
+	envs: EnvFilePlan[];
+	renamed: { from: string; to: string }[];
+	/** Secret variables, kept out of the env files. */
+	secrets: string[];
+	local_added: string[];
+	local_updated: string[];
 }
 
 /** A variable of one env file as written: `${VAR}` expands, `\$` is literal. */

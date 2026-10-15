@@ -103,6 +103,9 @@ pub struct RunOptions {
     pub timeout: Duration,
     /// Set from another thread to stop the request in flight.
     pub cancel: Arc<AtomicBool>,
+    /// Leaves secrets unmasked in the result, for the local web UI only;
+    /// CLI and MCP output must stay masked.
+    pub reveal_secrets: bool,
 }
 
 impl RunOptions {
@@ -110,6 +113,7 @@ impl RunOptions {
         RunOptions {
             timeout: Duration::from_secs(c.config.timeout.unwrap_or(DEFAULT_TIMEOUT_SECS)),
             cancel: Arc::default(),
+            reveal_secrets: false,
         }
     }
 
@@ -214,14 +218,25 @@ fn execute(
         ));
     }
 
+    let unmasked = Redactor::default();
     let response = match spawn(collection, file, req, ctx) {
         Ok((resp, stderr)) => {
-            result.stderr = ctx.redactor.redact(&stderr);
+            let r = if ctx.options.reveal_secrets {
+                &unmasked
+            } else {
+                &ctx.redactor
+            };
+            result.stderr = r.redact(&stderr);
             resp
         }
         Err((msg, stderr)) => {
-            result.stderr = ctx.redactor.redact(&stderr);
-            result.error = Some(ctx.redactor.redact(&msg));
+            let r = if ctx.options.reveal_secrets {
+                &unmasked
+            } else {
+                &ctx.redactor
+            };
+            result.stderr = r.redact(&stderr);
+            result.error = Some(r.redact(&msg));
             result.outcome = if ctx.options.cancelled() {
                 Outcome::Cancelled
             } else {
@@ -271,12 +286,18 @@ fn execute(
         }
     }
 
-    let r = &ctx.redactor;
+    let r = if ctx.options.reveal_secrets {
+        &unmasked
+    } else {
+        &ctx.redactor
+    };
     for a in &mut result.assertions {
         a.message = a.message.as_deref().map(|m| r.redact(m));
     }
-    for c in &mut result.captures {
-        c.value = r.display_var(&c.name, &c.value);
+    if !ctx.options.reveal_secrets {
+        for c in &mut result.captures {
+            c.value = r.display_var(&c.name, &c.value);
+        }
     }
     result.response = Some(view(&response, r));
     result.outcome = if all_passed && result.error.is_none() {

@@ -8,6 +8,7 @@
 	import NewRequestDialog from './lib/NewRequestDialog.svelte';
 	import AddFolderDialog from './lib/AddFolderDialog.svelte';
 	import ImportPostmanDialog from './lib/ImportPostmanDialog.svelte';
+	import ImportPostmanEnvDialog from './lib/ImportPostmanEnvDialog.svelte';
 	import CopyDialog from './lib/CopyDialog.svelte';
 	import EnvManager, { type EnvChange } from './lib/EnvManager.svelte';
 	import Icon from './lib/Icon.svelte';
@@ -16,7 +17,8 @@
 	import SetVarPopover from './lib/SetVarPopover.svelte';
 	import Splitter from './lib/Splitter.svelte';
 	import { ApiError, api, run, setToken, streamEvents } from './lib/api';
-	import { needsValue, statusFrom, varOptions } from './lib/vars';
+	import { infoFrom, needsValue, statusFrom, varOptions } from './lib/vars';
+	import { anyCollapsed, collapseAll, expandAll, reveal } from './lib/folders.svelte';
 	import type { CollectionInfo, EnvVars, Info, RequestDoc, RequestResult, RunState, TreeNode } from './lib/types';
 
 	/** A request (or folder) inside a collection. */
@@ -66,6 +68,8 @@
 	let importing = $state(false);
 	let copying = $state(false);
 	let managingEnvs = $state<string | null>(null);
+	/** Collection whose Postman environment import is open; `back` reopens the environment manager. */
+	let importingEnvs = $state.raw<{ cid: string; back: boolean } | null>(null);
 	let error = $state<string | null>(null);
 	let needToken = $state(false);
 	let tokenInput = $state('');
@@ -80,6 +84,7 @@
 	let active = $derived(
 		(selected && byId[selected.cid]) || collections.find((c) => !c.missing) || null
 	);
+	let someCollapsed = $derived(anyCollapsed(collections.map((c) => c.id)));
 	let onlyScratch = $derived(collections.every((c) => c.scratch));
 	let outcomes = $derived.by(() => {
 		const out: Record<string, Record<string, string>> = {};
@@ -92,6 +97,7 @@
 	let shownResult = $derived(selected ? (results[key(selected)] ?? null) : null);
 	let copyTargets = $derived(collections.filter((c) => !c.missing && c.id !== docRef?.cid));
 	let statusFns = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, statusFrom(v)])));
+	let infoFns = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, infoFrom(v)])));
 	let optionLists = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, varOptions(v)])));
 	/** Collection the command bar is about. */
 	let barCid = $derived(docRef?.cid ?? (active && !active.missing ? active.id : null));
@@ -202,8 +208,17 @@
 		}
 	}
 
+	function collapseFolders() {
+		for (const c of collections) if (!c.missing) collapseAll(c.id, trees[c.id] ?? null);
+	}
+
+	function expandFolders() {
+		for (const c of collections) expandAll(c.id);
+	}
+
 	async function open(cid: string, path: string) {
 		selected = { cid, path };
+		reveal(cid, path);
 		try {
 			doc = await api.getRequest(cid, path);
 			docRef = { cid, path };
@@ -327,6 +342,11 @@
 		}
 	}
 
+	function closeEnvImport() {
+		if (importingEnvs?.back) managingEnvs = importingEnvs.cid;
+		importingEnvs = null;
+	}
+
 	async function addFolder(path: string) {
 		const col = await api.addCollection(path);
 		adding = false;
@@ -361,6 +381,7 @@
 			}
 			if (runState?.collection === cid) runState = null;
 			if (managingEnvs === cid) managingEnvs = null;
+			if (importingEnvs?.cid === cid) importingEnvs = null;
 		} catch (e) {
 			fail(e);
 		}
@@ -373,7 +394,8 @@
 	}
 
 	function onkeydown(e: KeyboardEvent) {
-		const dialogOpen = newIn || adding || importing || copying || managingEnvs !== null || needToken || setting;
+		const dialogOpen =
+			newIn || adding || importing || copying || managingEnvs !== null || importingEnvs || needToken || setting;
 		if (e.key === 'Escape' && runId && !dialogOpen && !e.defaultPrevented) {
 			e.preventDefault();
 			stopRun();
@@ -479,36 +501,50 @@
 		style:--response-fr="{1 - editorFrac}fr"
 	>
 		<aside>
-			{#each collections as col (col.id)}
-				<CollectionSection
-					{col}
-					tree={trees[col.id] ?? null}
-					envs={envLists[col.id] ?? []}
-					env={envs[col.id] ?? ''}
-					selected={selected?.cid === col.id ? selected.path : null}
-					running={running?.cid === col.id ? running.path : null}
-					outcomes={outcomes[col.id] ?? {}}
-					busy={running !== null}
-					onselect={(p) => open(col.id, p)}
-					onrun={(p) => runPath(col.id, p)}
-					onnew={(f) => (newIn = { cid: col.id, path: f })}
-					onenv={(e) => changeEnv(col.id, e)}
-					onmanageenvs={() => (managingEnvs = col.id)}
-					onclearcaptures={() => clearCaptures(col.id)}
-					onunlink={() => unlink(col.id)}
-					onreveal={info?.can_reveal ? () => api.reveal(col.id).catch(fail) : undefined}
-				/>
-			{/each}
-			{#if info && onlyScratch}
-				<div class="onboard">
-					<p>Try requests in Scratch, or bring in a collection:</p>
-					<button class="ghost" onclick={() => (adding = true)}><Icon name="folder" />Open a folder</button>
-					<button class="ghost" onclick={() => (importing = true)}><Icon name="upload" />Import from Postman</button>
-				</div>
-			{/if}
-			{#if info && !info.saved}
-				<p class="hint">Session only: changes to this list are not saved.</p>
-			{/if}
+			<div class="side-bar">
+				<span class="side-title">Collections</span>
+				<button
+					class="icon-btn"
+					title={someCollapsed ? 'Expand all' : 'Collapse all folders'}
+					aria-label={someCollapsed ? 'Expand all' : 'Collapse all folders'}
+					onclick={someCollapsed ? expandFolders : collapseFolders}
+				>
+					<Icon name={someCollapsed ? 'expand' : 'collapse'} size={13} />
+				</button>
+			</div>
+			<div class="side-list">
+				{#each collections as col (col.id)}
+					<CollectionSection
+						{col}
+						tree={trees[col.id] ?? null}
+						envs={envLists[col.id] ?? []}
+						env={envs[col.id] ?? ''}
+						selected={selected?.cid === col.id ? selected.path : null}
+						running={running?.cid === col.id ? running.path : null}
+						outcomes={outcomes[col.id] ?? {}}
+						busy={running !== null}
+						onselect={(p) => open(col.id, p)}
+						onrun={(p) => runPath(col.id, p)}
+						onnew={(f) => (newIn = { cid: col.id, path: f })}
+						onenv={(e) => changeEnv(col.id, e)}
+						onmanageenvs={() => (managingEnvs = col.id)}
+						onimportenvs={() => (importingEnvs = { cid: col.id, back: false })}
+						onclearcaptures={() => clearCaptures(col.id)}
+						onunlink={() => unlink(col.id)}
+						onreveal={info?.can_reveal ? () => api.reveal(col.id).catch(fail) : undefined}
+					/>
+				{/each}
+				{#if info && onlyScratch}
+					<div class="onboard">
+						<p>Try requests in Scratch, or bring in a collection:</p>
+						<button class="ghost" onclick={() => (adding = true)}><Icon name="folder" />Open a folder</button>
+						<button class="ghost" onclick={() => (importing = true)}><Icon name="upload" />Import from Postman</button>
+					</div>
+				{/if}
+				{#if info && !info.saved}
+					<p class="hint">Session only: changes to this list are not saved.</p>
+				{/if}
+			</div>
 		</aside>
 		<Splitter
 			class="split-sidebar"
@@ -531,6 +567,8 @@
 						{doc}
 						vars={optionLists[cid] ?? []}
 						varStatus={statusFns[cid] ?? (() => 'ok')}
+						varInfo={infoFns[cid] ?? infoFrom(undefined)}
+						env={envs[cid] ?? ''}
 						onsetvar={(name, anchor) => openSetVar(cid, name, anchor)}
 						onsave={save}
 						onrun={() => runPath(cid, doc!.path)}
@@ -572,7 +610,7 @@
 					onstop={runId && !runState.summary ? stopRun : undefined}
 				/>
 			{/if}
-			<ResponsePane result={shownResult} />
+			<ResponsePane result={shownResult} onadd={doc ? (k, l) => editor?.addAnnotation(k, l) : undefined} />
 		</section>
 	</main>
 </div>
@@ -601,7 +639,21 @@
 		collection={byId[cid]?.name ?? cid}
 		current={envs[cid] ?? ''}
 		onchanged={(change) => envsChanged(cid, change)}
+		onimport={() => ((managingEnvs = null), (importingEnvs = { cid, back: true }))}
 		onclose={() => (managingEnvs = null)}
+	/>
+{/if}
+
+{#if importingEnvs}
+	{@const cid = importingEnvs.cid}
+	<ImportPostmanEnvDialog
+		{cid}
+		collection={byId[cid]?.name ?? cid}
+		onimported={async () => {
+			await envsChanged(cid, null);
+			closeEnvImport();
+		}}
+		onclose={closeEnvImport}
 	/>
 {/if}
 
@@ -609,8 +661,8 @@
 	{@const s = setting}
 	<SetVarPopover
 		cid={s.cid}
-		name={s.name}
-		status={statusFns[s.cid]?.(s.name) ?? 'missing'}
+		env={envs[s.cid] ?? ''}
+		info={(infoFns[s.cid] ?? infoFrom(undefined))(s.name)}
 		anchor={s.anchor}
 		onsaved={() => loadVars(s.cid)}
 		onmanage={() => ((managingEnvs = s.cid), (setting = null))}
@@ -731,9 +783,31 @@
 		min-height: 0;
 	}
 	aside {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		background: var(--panel);
+	}
+	.side-bar {
+		display: flex;
+		align-items: center;
+		gap: 1px;
+		padding: 4px 6px 4px 10px;
+		border-bottom: 1px solid var(--border);
+	}
+	.side-title {
+		flex: 1;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--muted);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	.side-list {
+		flex: 1;
+		min-height: 0;
 		overflow: auto;
 		padding: 0 0 6px;
-		background: var(--panel);
 	}
 	.onboard {
 		margin: 10px;

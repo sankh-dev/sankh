@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { EnvVars } from './types';
+import type { EnvFileVar, EnvVar, EnvVars } from './types';
 
 /**
  * - `ok`: has a real value
@@ -97,6 +97,67 @@ export function statusFrom(info: EnvVars | undefined): (name: string) => VarStat
 	};
 }
 
+/** What the hover tooltip shows about one variable. */
+export interface VarInfo {
+	name: string;
+	/** As the server reports it (secrets masked); `null` when not listed. */
+	value: string | null;
+	source: EnvVar['source'] | null;
+	status: VarStatus;
+}
+
+/** Lookup over the `/envs/:name` response, for hover tooltips. */
+export function infoFrom(info: EnvVars | undefined): (name: string) => VarInfo {
+	const status = statusFrom(info);
+	const byName = new Map((info?.vars ?? []).map((v) => [v.name, v]));
+	return (name) => {
+		const v = byName.get(name);
+		return { name, value: v?.value ?? null, source: v?.source ?? null, status: status(name) };
+	};
+}
+
+function sourceText(v: VarInfo, env: string) {
+	if (v.source === 'file') return `environments/${env}.env`;
+	if (v.source === 'local') return '.env.local';
+	if (v.source === 'capture') return 'captured in an earlier run';
+	if (v.status === 'ok') return 'process environment';
+	if (v.status === 'runtime') return 'not set yet';
+	return STATUS_TEXT[v.status];
+}
+
+/** Tooltip body for a `$VAR` reference: value, where it comes from, and an Edit button. */
+export function varTipDom(v: VarInfo, env: string, onedit?: (anchor: DOMRect) => void): HTMLElement {
+	const dom = document.createElement('div');
+	dom.className = 'var-tip';
+	const head = document.createElement('div');
+	head.className = 'var-tip-head';
+	const name = document.createElement('span');
+	name.className = 'var-tip-name';
+	name.textContent = v.name;
+	const src = document.createElement('span');
+	src.className = `var-tip-src ${v.status}`;
+	src.textContent = sourceText(v, env);
+	head.append(name, src);
+	const value = document.createElement('div');
+	value.className = 'var-tip-value';
+	if (v.value === null || (v.status !== 'ok' && v.status !== 'runtime' && !v.value)) {
+		value.classList.add('none');
+		value.textContent = v.status === 'runtime' ? 'set by a capture when the collection runs' : 'no value';
+	} else {
+		value.textContent = v.value || '(empty)';
+	}
+	dom.append(head, value);
+	if (onedit) {
+		const btn = document.createElement('button');
+		btn.type = 'button';
+		btn.textContent = needsValue(v.status) ? 'Set value…' : 'Edit…';
+		btn.onmousedown = (e) => e.preventDefault();
+		btn.onclick = () => onedit(btn.getBoundingClientRect());
+		dom.append(btn);
+	}
+	return dom;
+}
+
 /** Same markers as the server's redaction (`redact.rs`). */
 const SECRET = /TOKEN|SECRET|KEY|PASSWORD|PASSWD|AUTH|COOKIE/i;
 
@@ -121,11 +182,21 @@ export const STATUS_TEXT: Record<VarStatus, string> = {
 	runtime: 'set by a capture when the collection runs'
 };
 
-/** Sets `name` in the collection's `.env.local`, keeping its other lines. */
-export async function setLocalVar(cid: string, name: string, value: string) {
-	const { vars } = await api.envLocal(cid);
+function upsert(vars: EnvFileVar[], name: string, value: string) {
 	const i = vars.findIndex((v) => v.name === name);
 	if (i >= 0) vars[i] = { name, value };
 	else vars.push({ name, value });
-	await api.saveEnvLocal(cid, vars.map(({ name, value }) => ({ name, value })));
+	return vars.map(({ name, value }) => ({ name, value }));
+}
+
+/** Sets `name` in the collection's `.env.local`, keeping its other lines. */
+export async function setLocalVar(cid: string, name: string, value: string) {
+	const { vars } = await api.envLocal(cid);
+	await api.saveEnvLocal(cid, upsert(vars, name, value));
+}
+
+/** Sets `name` in `environments/<env>.env`, keeping its other lines. */
+export async function setEnvVar(cid: string, env: string, name: string, value: string) {
+	const { vars } = await api.envFile(cid, env);
+	await api.saveEnvFile(cid, env, upsert(vars, name, value));
 }
