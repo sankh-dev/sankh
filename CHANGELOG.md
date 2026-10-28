@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-28
+
+### Added
+
+- **Open a folder of collections.** Adding a folder that contains several collections adds each one, so each collection's environments load. Dropping a collection into `~/sankh-collections` while the app is open adds it. **Refresh** rescans that folder and reloads open collections.
+- **A download for your system.** The homepage lets you choose the CLI or the desktop app, and macOS, Windows or Linux. Each choice has one download or install command. Desktop releases also publish stable filenames such as `Sankh-windows-setup.exe`, so those links keep working.
+
+### Changed
+
+- **`sankh run` on a folder of collections stops.** It names each collection and asks you to run that path on its own, instead of treating the parent as one collection.
+- **`POST /api/collections` returns every collection it opened,** as `{ "added": [...] }`.
+
 ## [0.9.1] - 2026-10-15
 
 ### Added

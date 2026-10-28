@@ -47,11 +47,11 @@ curl -fsSL https://sankh.dev/install.sh | sh
 
 | Variable | Effect |
 | --- | --- |
-| `SANKH_VERSION` | Version to install, e.g. `0.9.1`. Default: the latest release. |
+| `SANKH_VERSION` | Version to install, e.g. `0.10.0`. Default: the latest release. |
 | `SANKH_INSTALL_DIR` | Install directory. Default: `~/.local/bin`. |
 
 ```bash
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.10.0 sh
 curl -fsSL https://sankh.dev/install.sh | SANKH_INSTALL_DIR="$HOME/bin" sh
 ```
 
@@ -82,7 +82,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/sankh-dev/sankh/re
 The installer puts `sankh.exe` in `%USERPROFILE%\.local\bin` (or
 `$env:SANKH_INSTALL_DIR`) and adds that folder to your user `PATH`. Open a new
 terminal afterwards. For a specific version, replace `latest/download` with
-`download/v0.9.1`.
+`download/v0.10.0`.
 
 Then run `sankh` from Git Bash, which is where request files get their shell:
 
@@ -126,7 +126,7 @@ GitHub Actions it adds the install directory to `GITHUB_PATH`, so later steps
 find `sankh`. See [Running in CI](ci.md) for a full example.
 
 ```bash
-curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh
+curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.10.0 sh
 ```
 
 ## Desktop app
@@ -177,8 +177,8 @@ sudo apt install ./Sankh-linux-amd64.deb
 Pin a version when the install must be reproducible:
 
 ```bash
-curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.9.1/Sankh_0.9.1_amd64.deb
-sudo apt install ./Sankh_0.9.1_amd64.deb
+curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.10.0/Sankh_0.10.0_amd64.deb
+sudo apt install ./Sankh_0.10.0_amd64.deb
 ```
 
 `apt` pulls in WebKitGTK and the other libraries the app needs.
@@ -196,9 +196,9 @@ sudo zypper install ./Sankh-linux-x86_64.rpm    # openSUSE
 Pin a version when the install must be reproducible:
 
 ```bash
-curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.9.1/Sankh-0.9.1-1.x86_64.rpm
-sudo dnf install ./Sankh-0.9.1-1.x86_64.rpm       # Fedora, RHEL, CentOS Stream
-sudo zypper install ./Sankh-0.9.1-1.x86_64.rpm    # openSUSE
+curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.10.0/Sankh-0.10.0-1.x86_64.rpm
+sudo dnf install ./Sankh-0.10.0-1.x86_64.rpm       # Fedora, RHEL, CentOS Stream
+sudo zypper install ./Sankh-0.10.0-1.x86_64.rpm    # openSUSE
 ```
 
 ### Any other Linux (AppImage)
@@ -217,9 +217,9 @@ chmod +x Sankh-linux-amd64.AppImage
 Pin a version when the install must be reproducible:
 
 ```bash
-curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.9.1/Sankh_0.9.1_amd64.AppImage
-chmod +x Sankh_0.9.1_amd64.AppImage
-./Sankh_0.9.1_amd64.AppImage
+curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.10.0/Sankh_0.10.0_amd64.AppImage
+chmod +x Sankh_0.10.0_amd64.AppImage
+./Sankh_0.10.0_amd64.AppImage
 ```
 
 It uses the system WebKitGTK (`libwebkit2gtk-4.1`), which most desktop
