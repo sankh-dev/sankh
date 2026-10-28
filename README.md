@@ -43,7 +43,7 @@ Or build from source (needs Rust and Node 22):
 cargo install --path crates/sankh-cli
 ```
 
-Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL.
+Sankh needs a POSIX shell at run time. On Windows use Git Bash or WSL. When `curl` is not installed there, the Windows build uses a bundled curl.
 
 ### Desktop app
 
@@ -56,7 +56,7 @@ opens your saved workspace, like `sankh serve`.
 The installers are not code signed yet. On macOS right-click the app and
 choose Open the first time (or `xattr -dr com.apple.quarantine
 /Applications/Sankh.app`); on Windows choose More info, then Run anyway. It
-still needs `curl` and a POSIX shell (Git Bash on Windows).
+still needs a POSIX shell (Git Bash on Windows). When `curl` is not installed, the app uses a bundled curl. Requests run in the background and do not open a terminal.
 
 ## Quick start
 

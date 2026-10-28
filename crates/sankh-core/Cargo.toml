@@ -26,6 +26,11 @@ base64.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[build-dependencies]
+sha2 = "0.10"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 [dev-dependencies]
 insta.workspace = true
 httpmock.workspace = true

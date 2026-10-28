@@ -14,7 +14,7 @@ Windows (PowerShell), then use `sankh` from Git Bash:
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/sankh-dev/sankh/releases/latest/download/sankh-installer.ps1 | iex"
 ```
 
-Sankh needs `curl` and a POSIX shell at run time. On Windows use Git Bash or WSL.
+Sankh needs a POSIX shell at run time. On Windows use Git Bash or WSL. When `curl` is not installed there, the Windows build uses a bundled curl.
 
 Prefer a native window? The [desktop app](desktop.md) is the same UI as
 `sankh serve`, for macOS, Windows and Linux. [Install](install.md) has every

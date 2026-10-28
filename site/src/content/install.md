@@ -22,16 +22,16 @@ Anything else can [build from source](#build-from-source).
 
 ## Requirements
 
-Request files run with `curl` and a POSIX shell, so both must be installed
-where requests run:
+Request files run with `curl` and a POSIX shell:
 
 - **macOS:** nothing to add; `curl` and `sh` ship with the system.
 - **Linux:** install `curl` if your distribution leaves it out
   (`sudo apt install curl`, `sudo dnf install curl`, `sudo apk add curl`).
   Many request files also use `jq`.
-- **Windows:** install [Git for Windows](https://git-scm.com/download/win),
-  which brings Git Bash and `curl`. Run the CLI from Git Bash, or use
-  [WSL](#windows-subsystem-for-linux) and follow the Linux steps.
+- **Windows:** install [Git for Windows](https://git-scm.com/download/win)
+  for its POSIX shell, and run the CLI from Git Bash. Or use
+  [WSL](#windows-subsystem-for-linux) and follow the Linux steps. When
+  `curl` is not installed, the Windows build uses a bundled curl.
 
 ## CLI
 
@@ -162,8 +162,10 @@ Download [Sankh-windows-setup.exe](https://github.com/sankh-dev/sankh/releases/l
 (for managed or machine-wide installs) and run it. In the SmartScreen prompt
 choose **More info**, then **Run anyway**.
 
-The app needs [Git for Windows](https://git-scm.com/download/win) to run
-requests; it finds a standard Git install even when Git Bash is not on `PATH`.
+The app needs [Git for Windows](https://git-scm.com/download/win) for a POSIX
+shell. It finds a standard Git install even when Git Bash is not on `PATH`.
+When `curl` is not installed, the app uses a bundled curl. Requests run in
+the background and do not open a terminal.
 
 ### Debian, Ubuntu, Linux Mint, Pop!_OS
 

@@ -350,14 +350,20 @@ fn image_base64(resp: &Response) -> Option<String> {
 
 fn find_in_path(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).find_map(|dir| {
-        // System32's bash.exe is the WSL launcher, which cannot see Windows paths.
-        if cfg!(windows)
-            && dir
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .contains("system32")
-        {
+    program_in_path(&path, program)
+}
+
+/// `System32\bash.exe` is the WSL launcher, and Windows 10's `System32\curl.exe`
+/// is too old for `-w '%{json}'`. Skip that directory for every lookup.
+fn is_system32(dir: &Path) -> bool {
+    dir.components().any(|c| {
+        matches!(c, std::path::Component::Normal(name) if name.eq_ignore_ascii_case("system32"))
+    })
+}
+
+fn program_in_path(path: &std::ffi::OsStr, program: &str) -> Option<PathBuf> {
+    std::env::split_paths(path).find_map(|dir| {
+        if is_system32(&dir) {
             return None;
         }
         let candidate = dir.join(program);
@@ -367,6 +373,146 @@ fn find_in_path(program: &str) -> Option<PathBuf> {
         let exe = dir.join(format!("{program}.exe"));
         exe.is_file().then_some(exe)
     })
+}
+
+/// Where the `curl` that runs a request file comes from.
+#[derive(Debug, PartialEq, Eq)]
+enum CurlLocate {
+    /// `curl` is already on the child `PATH`.
+    OnPath,
+    /// Directory to prepend (Git's `mingw64\bin`).
+    Directory(PathBuf),
+    /// Bundled curl. Prepend the directory and set `CURL_CA_BUNDLE` when unset.
+    Bundled(PathBuf),
+}
+
+/// Picks curl from `PATH`, then `mingw64\bin\curl.exe` beside a Git shell,
+/// then `bundled` when that directory contains a curl binary.
+fn locate_curl(
+    path: Option<&std::ffi::OsStr>,
+    shell: &Path,
+    bundled: Option<&Path>,
+) -> Result<CurlLocate, String> {
+    if path.is_some_and(|path| program_in_path(path, "curl").is_some()) {
+        return Ok(CurlLocate::OnPath);
+    }
+    if let Some(dir) = git_curl_dir(shell) {
+        return Ok(CurlLocate::Directory(dir));
+    }
+    if let Some(dir) = bundled {
+        if dir.join("curl.exe").is_file() || dir.join("curl").is_file() {
+            return Ok(CurlLocate::Bundled(dir.to_path_buf()));
+        }
+    }
+    Err("`curl` was not found on PATH".into())
+}
+
+/// `...\Git\bin\bash.exe` and `...\Git\usr\bin\sh.exe` ship curl in `mingw64\bin`.
+fn git_curl_dir(shell: &Path) -> Option<PathBuf> {
+    let bin_dir = shell.parent()?;
+    if !file_name_eq(bin_dir, "bin") {
+        return None;
+    }
+    let above = bin_dir.parent()?;
+    let root = if file_name_eq(above, "usr") {
+        above.parent()?
+    } else {
+        above
+    };
+    let dir = root.join("mingw64").join("bin");
+    dir.join("curl.exe").is_file().then_some(dir)
+}
+
+fn file_name_eq(path: &Path, want: &str) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(want))
+}
+
+fn prepend_path(vars: &mut crate::env::Vars, dir: &Path) {
+    let key = vars
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("PATH"))
+        .cloned()
+        .unwrap_or_else(|| "PATH".into());
+    let old = vars.get(&key).cloned().unwrap_or_default();
+    let joined = if old.is_empty() {
+        dir.to_string_lossy().into_owned()
+    } else {
+        let mut dirs = vec![dir.to_path_buf()];
+        dirs.extend(std::env::split_paths(&old));
+        std::env::join_paths(dirs)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| dir.to_string_lossy().into_owned())
+    };
+    vars.insert(key, joined);
+}
+
+fn apply_curl_env(vars: &mut crate::env::Vars, located: &CurlLocate) {
+    let (CurlLocate::Directory(dir) | CurlLocate::Bundled(dir)) = located else {
+        return;
+    };
+    prepend_path(vars, dir);
+    if !matches!(located, CurlLocate::Bundled(_)) {
+        return;
+    }
+    let has_ca = vars
+        .iter()
+        .any(|(k, v)| k.eq_ignore_ascii_case("CURL_CA_BUNDLE") && !v.is_empty());
+    if has_ca {
+        return;
+    }
+    let ca = dir.join("curl-ca-bundle.crt");
+    if ca.is_file() {
+        vars.insert("CURL_CA_BUNDLE".into(), ca.to_string_lossy().into_owned());
+    }
+}
+
+fn bundled_curl_or_err(message: String) -> Result<CurlLocate, SpawnError> {
+    #[cfg(windows)]
+    {
+        let _ = message;
+        let dir = extract_bundled_curl().map_err(|e| (e, String::new()))?;
+        Ok(CurlLocate::Bundled(dir))
+    }
+    #[cfg(not(windows))]
+    {
+        Err((message, String::new()))
+    }
+}
+
+#[cfg(windows)]
+fn extract_bundled_curl() -> Result<PathBuf, String> {
+    let dir = dirs::data_local_dir()
+        .or_else(|| std::env::var_os("TEMP").map(PathBuf::from))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("sankh")
+        .join("curl")
+        .join(bundled_curl::VERSION);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    for (name, bytes) in bundled_curl::FILES {
+        if name.contains(['/', '\\']) || name.contains("..") {
+            return Err(format!("bundled curl has an unsafe file name: {name}"));
+        }
+        write_bundled_file(&dir, name, bytes)?;
+    }
+    Ok(dir)
+}
+
+#[cfg(windows)]
+fn write_bundled_file(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
+    let path = dir.join(name);
+    if path.is_file() && std::fs::metadata(&path).is_ok_and(|meta| meta.len() == bytes.len() as u64)
+    {
+        return Ok(());
+    }
+    let tmp = dir.join(format!("{name}.partial"));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("cannot install {}: {e}", path.display()))
+}
+
+#[cfg(windows)]
+mod bundled_curl {
+    include!(concat!(env!("OUT_DIR"), "/bundled_curl.rs"));
 }
 
 type SpawnError = (String, String);
@@ -388,9 +534,17 @@ fn spawn(
                 String::new(),
             )
         })?;
-    if find_in_path("curl").is_none() {
-        return Err(("`curl` was not found on PATH".into(), String::new()));
-    }
+    let resolved = ctx.env.resolved();
+    let path = resolved
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+        .map(|(_, v)| v.clone());
+    let located = match locate_curl(path.as_deref().map(std::ffi::OsStr::new), &shell, None) {
+        Ok(located) => located,
+        Err(message) => bundled_curl_or_err(message)?,
+    };
+    let mut vars = resolved;
+    apply_curl_env(&mut vars, &located);
 
     let tmp =
         tempfile::tempdir().map_err(|e| (format!("cannot create temp dir: {e}"), String::new()))?;
@@ -416,7 +570,7 @@ fn spawn(
         .arg(script)
         .current_dir(&collection.root)
         .env_clear()
-        .envs(ctx.env.resolved())
+        .envs(&vars)
         .env("SANKH", "1")
         .env("SANKH_OUT_BODY", &body_path)
         .env("SANKH_OUT_HEADERS", &headers_path)
@@ -427,6 +581,15 @@ fn spawn(
         .stderr(Stdio::piped());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    // The release desktop app is a GUI binary. Without this flag Windows
+    // opens a console for each console-subsystem shell and closes it when
+    // the request exits.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 
     let child = cmd.spawn().map_err(|e| {
         (
@@ -612,5 +775,121 @@ mod tests {
         let big = vec![0u8; MAX_BODY_DISPLAY + 1];
         let v = view(&response("IMAGE/JPEG", big), &Redactor::default());
         assert_eq!(v.body_base64, None);
+    }
+
+    struct CurlFixture {
+        _root: tempfile::TempDir,
+        git_bash: PathBuf,
+        git_sh: PathBuf,
+        git_curl_dir: PathBuf,
+        path_curl_dir: PathBuf,
+        system32: PathBuf,
+        bundled: PathBuf,
+    }
+
+    fn curl_fixture() -> CurlFixture {
+        let root = tempfile::tempdir().unwrap();
+        let git = root.path().join("Git");
+        let git_bash = git.join("bin").join("bash.exe");
+        let git_sh = git.join("usr").join("bin").join("sh.exe");
+        let git_curl_dir = git.join("mingw64").join("bin");
+        let path_curl_dir = root.path().join("path-bin");
+        let system32 = root.path().join("Windows").join("System32");
+        let bundled = root.path().join("bundled");
+        for dir in [
+            git_bash.parent(),
+            git_sh.parent(),
+            Some(git_curl_dir.as_path()),
+            Some(path_curl_dir.as_path()),
+            Some(system32.as_path()),
+            Some(bundled.as_path()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(&git_bash, b"bash").unwrap();
+        std::fs::write(&git_sh, b"sh").unwrap();
+        std::fs::write(git_curl_dir.join("curl.exe"), b"git-curl").unwrap();
+        std::fs::write(path_curl_dir.join("curl"), b"path-curl").unwrap();
+        std::fs::write(system32.join("curl.exe"), b"old-curl").unwrap();
+        std::fs::write(bundled.join("curl.exe"), b"bundled-curl").unwrap();
+        std::fs::write(bundled.join("curl-ca-bundle.crt"), b"ca").unwrap();
+        CurlFixture {
+            _root: root,
+            git_bash,
+            git_sh,
+            git_curl_dir,
+            path_curl_dir,
+            system32,
+            bundled,
+        }
+    }
+
+    fn joined(dirs: &[&Path]) -> std::ffi::OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    #[test]
+    fn path_curl_wins() {
+        let f = curl_fixture();
+        let path = joined(&[&f.path_curl_dir, &f.system32]);
+        let got = locate_curl(Some(&path), &f.git_bash, Some(&f.bundled)).unwrap();
+        assert_eq!(got, CurlLocate::OnPath);
+    }
+
+    #[test]
+    fn git_curl_beside_bash_when_path_has_none() {
+        let f = curl_fixture();
+        let got = locate_curl(None, &f.git_bash, Some(&f.bundled)).unwrap();
+        assert_eq!(got, CurlLocate::Directory(f.git_curl_dir));
+    }
+
+    #[test]
+    fn git_curl_beside_usr_bin_sh() {
+        let f = curl_fixture();
+        let empty = f.system32.parent().unwrap().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let path = joined(&[&empty]);
+        let got = locate_curl(Some(&path), &f.git_sh, Some(&f.bundled)).unwrap();
+        assert_eq!(got, CurlLocate::Directory(f.git_curl_dir));
+    }
+
+    #[test]
+    fn system32_curl_is_ignored() {
+        let f = curl_fixture();
+        let path = joined(&[&f.system32]);
+        let shell = f.system32.join("bash.exe");
+        std::fs::write(&shell, b"wsl").unwrap();
+        let got = locate_curl(Some(&path), &shell, Some(&f.bundled)).unwrap();
+        assert_eq!(got, CurlLocate::Bundled(f.bundled));
+    }
+
+    #[test]
+    fn bundled_curl_when_nothing_else_exists() {
+        let f = curl_fixture();
+        let shell = f.bundled.join("sh.exe");
+        std::fs::write(&shell, b"sh").unwrap();
+        let got = locate_curl(None, &shell, Some(&f.bundled)).unwrap();
+        assert_eq!(got, CurlLocate::Bundled(f.bundled.clone()));
+        let mut vars = crate::env::Vars::new();
+        vars.insert("PATH".into(), "/usr/bin".into());
+        vars.insert("CURL_CA_BUNDLE".into(), String::new());
+        apply_curl_env(&mut vars, &got);
+        assert!(vars["PATH"].starts_with(&f.bundled.to_string_lossy().into_owned()));
+        assert_eq!(
+            vars["CURL_CA_BUNDLE"],
+            f.bundled.join("curl-ca-bundle.crt").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn missing_curl_is_an_error() {
+        let f = curl_fixture();
+        let shell = f.path_curl_dir.join("sh");
+        std::fs::write(&shell, b"sh").unwrap();
+        let err = locate_curl(None, &shell, None).unwrap_err();
+        assert_eq!(err, "`curl` was not found on PATH");
     }
 }

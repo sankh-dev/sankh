@@ -51,9 +51,11 @@ CI.
 
 ## Requirements
 
-Like the CLI, the app runs request files with `curl` and a POSIX shell. On
-Windows that means [Git for Windows](https://git-scm.com/download/win): the
-app finds a standard Git install even when Git Bash is not on `PATH`.
+Like the CLI, the app runs request files with a POSIX shell. On Windows that
+means [Git for Windows](https://git-scm.com/download/win): the app finds a
+standard Git install even when Git Bash is not on `PATH`. When `curl` is not
+installed, the app uses a bundled curl. Requests run in the background and
+do not open a terminal.
 
 Apps started from a launcher, Finder or the Start menu do not inherit your
 terminal's `PATH`. On macOS and Linux the app reads `PATH` from your login
