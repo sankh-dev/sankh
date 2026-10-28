@@ -10,6 +10,48 @@ pub const CONFIG_FILE: &str = "sankh.toml";
 pub const ENV_DIR: &str = "environments";
 const SKIP_DIRS: &[&str] = &[ENV_DIR, "node_modules", "target"];
 
+/// A folder Sankh treats as a collection root: it has `sankh.toml` or `environments/`.
+pub fn is_collection_root(dir: &Path) -> bool {
+    dir.join(CONFIG_FILE).is_file() || dir.join(ENV_DIR).is_dir()
+}
+
+/// Immediate child folders of `dir` that are collection roots, sorted by path.
+pub fn child_collection_roots(dir: &Path) -> Result<Vec<PathBuf>, CollectionError> {
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut children = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() && is_collection_root(&path) {
+            children.push(path.canonicalize().unwrap_or(path));
+        }
+    }
+    children.sort();
+    Ok(children)
+}
+
+/// When `path` lies under `home`, the top-level child of `home` that contains
+/// it, if that child is a collection root.
+pub fn collection_child(home: &Path, path: &Path) -> Option<PathBuf> {
+    let rel = path.strip_prefix(home).ok()?;
+    let name = rel.components().next()?.as_os_str();
+    if name.to_string_lossy().starts_with('.') {
+        return None;
+    }
+    let child = home.join(name);
+    if child.is_dir() && is_collection_root(&child) {
+        Some(child)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -93,6 +135,32 @@ impl Collection {
             .map(Path::to_path_buf)
             .unwrap_or(start);
         Ok((Collection::open(&root)?, target))
+    }
+
+    /// Collection roots implied by `path`.
+    ///
+    /// One root when `path` is inside a collection. Several when `path` is a
+    /// folder of collection roots (a shared zip, for example). Otherwise the
+    /// folder itself, which may be a plain directory of `.sh` files.
+    pub fn roots_for(path: &Path) -> Result<Vec<PathBuf>, CollectionError> {
+        let target = path
+            .canonicalize()
+            .map_err(|_| CollectionError::NotFound(path.to_path_buf()))?;
+        let start = if target.is_dir() {
+            target.clone()
+        } else {
+            target.parent().unwrap_or(&target).to_path_buf()
+        };
+        if let Some(root) = start.ancestors().find(|d| is_collection_root(d)) {
+            return Ok(vec![root.to_path_buf()]);
+        }
+        if target.is_dir() {
+            let children = child_collection_roots(&target)?;
+            if !children.is_empty() {
+                return Ok(children);
+            }
+        }
+        Ok(vec![start])
     }
 
     pub fn open(root: &Path) -> Result<Collection, CollectionError> {

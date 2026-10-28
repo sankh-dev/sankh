@@ -57,9 +57,13 @@ pub struct AppState {
     /// Captured values per (collection id, environment), so single-request
     /// runs in the UI can chain (log in once, then use the token).
     pub captures: Mutex<HashMap<(String, String), Vars>>,
-    /// Ids of collections whose files changed.
+    /// Ids of collections whose files changed, or [`watch::COLLECTIONS_CHANGED`]
+    /// when the set of collections changed.
     pub changes: broadcast::Sender<String>,
     watcher: Mutex<Option<watch::Watcher>>,
+    /// `~/sankh-collections` for a saved workspace. None for a session started
+    /// with explicit paths, which does not scan that folder.
+    pub import_home: Option<PathBuf>,
 }
 
 impl AppState {
@@ -77,6 +81,7 @@ impl AppState {
         let local = is_loopback(listen);
         let check_host = local || !allow_hosts.is_empty();
         let (changes, _) = broadcast::channel(64);
+        let import_home = registry.persist().then(sankh_core::paths::collections_dir);
         AppState {
             registry: RwLock::new(registry),
             token,
@@ -87,14 +92,32 @@ impl AppState {
             captures: Mutex::new(HashMap::new()),
             changes,
             watcher: Mutex::new(None),
+            import_home,
         }
     }
 
-    /// Starts watching every collection root for changes.
-    pub fn start_watching(&self) {
+    /// Starts watching every collection root, and `~/sankh-collections` when
+    /// this server uses the saved workspace.
+    pub fn start_watching(self: &Arc<Self>) {
         let mut guard = self.watcher.lock().unwrap();
         if guard.is_none() {
-            *guard = watch::Watcher::start(self.changes.clone());
+            let (imports_tx, imports_rx) = std::sync::mpsc::channel();
+            *guard = watch::Watcher::start(self.changes.clone(), imports_tx);
+            let state = Arc::clone(self);
+            std::thread::spawn(move || {
+                while let Ok(path) = imports_rx.recv() {
+                    let added = state
+                        .registry
+                        .write()
+                        .unwrap()
+                        .adopt_child(&path)
+                        .unwrap_or_default();
+                    if !added.is_empty() {
+                        state.sync_watch();
+                        let _ = state.changes.send(watch::COLLECTIONS_CHANGED.to_string());
+                    }
+                }
+            });
         }
         drop(guard);
         self.sync_watch();
@@ -102,7 +125,13 @@ impl AppState {
 
     /// Points the watcher (if running) at the current collection roots.
     fn sync_watch(&self) {
-        let roots = self.registry.read().unwrap().roots();
+        let mut roots = self.registry.read().unwrap().roots();
+        if let Some(home) = &self.import_home {
+            let home = home.canonicalize().unwrap_or_else(|_| home.clone());
+            if home.is_dir() {
+                roots.push((watch::IMPORT_ID.to_string(), home));
+            }
+        }
         if let Some(w) = self.watcher.lock().unwrap().as_mut() {
             w.set_roots(roots);
         }
@@ -146,6 +175,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/run", post(api::start_run));
     let api = Router::new()
         .route("/info", get(api::info))
+        .route("/collections/refresh", post(api::refresh_collections))
         .route("/collections", post(api::add_collection))
         .route("/collections/{cid}", delete(api::remove_collection))
         .route("/fs/dirs", get(api::list_dirs))

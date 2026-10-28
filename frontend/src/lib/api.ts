@@ -77,7 +77,9 @@ const c = (cid: string) => `/c/${encodeURIComponent(cid)}`;
 
 export const api = {
 	info: () => call<Info>('GET', '/info'),
-	addCollection: (path: string) => call<CollectionInfo>('POST', '/collections', { path }),
+	addCollection: (path: string) =>
+		call<{ added: CollectionInfo[] }>('POST', '/collections', { path }).then((r) => r.added),
+	refreshCollections: () => call<{ added: CollectionInfo[] }>('POST', '/collections/refresh'),
 	removeCollection: (cid: string) => call<unknown>('DELETE', `/collections/${encodeURIComponent(cid)}`),
 	listDirs: (path?: string) =>
 		call<DirListing>('GET', `/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`),

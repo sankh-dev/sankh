@@ -12,6 +12,19 @@ pub fn config_dir() -> PathBuf {
         .join("sankh")
 }
 
+/// `$SANKH_COLLECTIONS_DIR`, else `~/sankh-collections`.
+///
+/// This is the default parent for imported collections. It is not itself a
+/// collection: each child folder is one.
+pub fn collections_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("SANKH_COLLECTIONS_DIR") {
+        return PathBuf::from(dir);
+    }
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("sankh-collections")
+}
+
 /// `$SANKH_DATA_DIR`, else `~/.local/share/sankh` (platform equivalent).
 pub fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("SANKH_DATA_DIR") {

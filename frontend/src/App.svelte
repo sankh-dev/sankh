@@ -76,6 +76,7 @@
 	let editor = $state<ReturnType<typeof RequestEditor>>();
 	let editorDirty = $state(false);
 	let copied = $state(false);
+	let refreshing = $state(false);
 	let setting = $state.raw<{ cid: string; name: string; anchor: DOMRect } | null>(null);
 	let unsetAnchor = $state<HTMLElement>();
 
@@ -205,6 +206,27 @@
 			trees = { ...trees, [cid]: tree };
 		} catch (e) {
 			fail(e);
+		}
+	}
+
+	async function refreshCollections() {
+		if (refreshing) return;
+		refreshing = true;
+		try {
+			await api.refreshCollections();
+			info = await api.info();
+			await Promise.all(
+				(info?.collections ?? [])
+					.filter((c) => !c.missing)
+					.map(async (c) => {
+						await refreshTree(c.id);
+						await refreshEnvs(c.id);
+					})
+			);
+		} catch (e) {
+			fail(e);
+		} finally {
+			refreshing = false;
 		}
 	}
 
@@ -348,10 +370,12 @@
 	}
 
 	async function addFolder(path: string) {
-		const col = await api.addCollection(path);
+		const added = await api.addCollection(path);
 		adding = false;
 		info = await api.info();
-		await loadCollection(col);
+		for (const col of added) await loadCollection(col);
+		const first = added[0];
+		if (first) selected = { cid: first.id, path: '' };
 	}
 
 	async function imported(col: CollectionInfo) {
@@ -414,7 +438,17 @@
 	onMount(() => {
 		load();
 		const controller = new AbortController();
-		const onChange = (ev: { changed?: string | null } | string) => {
+		const onChange = async (ev: { changed?: string | null; collections?: boolean } | string) => {
+			if (typeof ev === 'object' && ev.collections) {
+				const known = new Set(collections.map((c) => c.id));
+				info = await api.info();
+				await Promise.all(
+					(info?.collections ?? [])
+						.filter((c) => !c.missing && !known.has(c.id))
+						.map((c) => loadCollection(c))
+				);
+				return;
+			}
 			const cid = typeof ev === 'object' ? ev.changed : null;
 			if (cid) {
 				refreshTree(cid);
@@ -503,6 +537,15 @@
 		<aside>
 			<div class="side-bar">
 				<span class="side-title">Collections</span>
+				<button
+					class="icon-btn"
+					title="Refresh collections"
+					aria-label="Refresh collections"
+					disabled={refreshing}
+					onclick={refreshCollections}
+				>
+					<Icon name="refresh" size={13} />
+				</button>
 				<button
 					class="icon-btn"
 					title={someCollapsed ? 'Expand all' : 'Collapse all folders'}

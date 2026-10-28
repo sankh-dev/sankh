@@ -9,7 +9,7 @@ use axum::http::StatusCode;
 use axum::response::sse::{KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use sankh_core::Collection;
-use sankh_core::collection::{CONFIG_FILE, CollectionError, ENV_DIR};
+use sankh_core::collection::CollectionError;
 use sankh_core::env::{self, Env, EnvEditError};
 use sankh_core::format::{self, RequestForm};
 use sankh_core::import::{self, ImportError};
@@ -184,13 +184,15 @@ pub async fn add_collection(
     if path.as_os_str().is_empty() {
         return Err(bad("path is required"));
     }
-    let slot = {
+    let slots = {
         let mut registry = state.registry.write().unwrap();
-        let id = registry.add(&path)?;
-        slot_json(registry.slot(&id).unwrap())
+        let ids = registry.add(&path)?;
+        ids.iter()
+            .filter_map(|id| registry.slot(id).map(slot_json))
+            .collect::<Vec<_>>()
     };
     state.sync_watch();
-    Ok(Json(slot))
+    Ok(Json(json!({ "added": slots })))
 }
 
 pub async fn remove_collection(
@@ -259,7 +261,7 @@ pub async fn list_dirs(Query(q): Query<DirsQuery>) -> ApiResult {
 }
 
 fn is_collection_dir(p: &std::path::Path) -> bool {
-    p.join(CONFIG_FILE).is_file() || p.join(ENV_DIR).is_dir()
+    sankh_core::collection::is_collection_root(p)
 }
 
 pub async fn tree(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
@@ -465,7 +467,11 @@ pub async fn import_postman(
     })?;
     let slot = {
         let mut registry = state.registry.write().unwrap();
-        let id = registry.add(&dir)?;
+        let ids = registry.add(&dir)?;
+        let id = ids
+            .first()
+            .cloned()
+            .ok_or_else(|| bad("import did not add a collection"))?;
         slot_json(registry.slot(&id).unwrap())
     };
     state.sync_watch();
@@ -480,15 +486,10 @@ fn dir_nonempty(dir: &std::path::Path) -> bool {
     std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_some())
 }
 
-/// Parent folder for imports when none is given; created on the first import.
-const IMPORT_HOME: &str = "sankh-collections";
-
 /// `~/sankh-collections/<slug>`, or `<slug>-2`, `<slug>-3`, ... when that
 /// folder is in use.
 fn default_import_dir(slug: &str) -> std::path::PathBuf {
-    let base = dirs::home_dir()
-        .unwrap_or_else(|| ".".into())
-        .join(IMPORT_HOME);
+    let base = sankh_core::paths::collections_dir();
     let mut dir = base.join(slug);
     let mut n = 2;
     while dir_nonempty(&dir) {
@@ -939,9 +940,32 @@ pub async fn change_events(State(state): State<Arc<AppState>>) -> impl IntoRespo
     use futures::StreamExt;
     let rx = state.changes.subscribe();
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx).map(|res| {
-        Ok::<_, std::convert::Infallible>(
-            Event::default().data(json!({ "changed": res.ok() }).to_string()),
-        )
+        let data = match res.ok().as_deref() {
+            Some(crate::watch::COLLECTIONS_CHANGED) => {
+                json!({ "changed": null, "collections": true })
+            }
+            Some(id) => json!({ "changed": id }),
+            None => json!({ "changed": null }),
+        };
+        Ok::<_, std::convert::Infallible>(Event::default().data(data.to_string()))
     });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// Reloads nothing by itself: the client re-reads trees after this returns.
+/// Scans `~/sankh-collections` for collection folders that are not linked yet
+/// and, when that folder was opened as one collection, replaces it with the
+/// children. A session server (no import home) returns an empty list.
+pub async fn refresh_collections(State(state): State<Arc<AppState>>) -> ApiResult {
+    let slots = if let Some(home) = state.import_home.clone() {
+        let mut registry = state.registry.write().unwrap();
+        let ids = registry.adopt_home(&home)?;
+        ids.iter()
+            .filter_map(|id| registry.slot(id).map(slot_json))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    state.sync_watch();
+    Ok(Json(json!({ "added": slots })))
 }

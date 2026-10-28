@@ -50,3 +50,17 @@ into a real collection. Existing files are never overwritten.
 - Collections cannot be nested inside each other.
 - Each collection is trusted on its own; see
   [Trust and secrets](trust-secrets.md).
+
+## A folder of collections
+
+Opening a folder that is not itself a collection, but whose child folders are
+(`sankh.toml` or `environments/` in each one), adds each child on its own.
+Each keeps its own environments. `sankh run` on that parent folder stops and
+names the collections to run instead.
+
+`sankh serve` with no path, and the desktop app, watch `~/sankh-collections`
+while they are open. A collection folder dropped there is added. A folder you
+have unlinked stays unlinked until you press **Refresh** on the Collections
+sidebar. Refresh also reloads files and environments for collections that are
+already open. If `~/sankh-collections` itself was opened as one collection,
+Refresh replaces that entry with the child collections.

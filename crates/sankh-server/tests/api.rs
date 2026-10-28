@@ -559,8 +559,8 @@ async fn adds_unlinks_and_copies_between_collections() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(added["id"], "payments");
-    assert_eq!(added["trust"]["state"], "untrusted");
+    assert_eq!(added["added"][0]["id"], "payments");
+    assert_eq!(added["added"][0]["trust"]["state"], "untrusted");
 
     let (status, _) = call(
         &s,
@@ -797,6 +797,137 @@ async fn postman_import_refuses_nested_targets_and_bad_input() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err["error"].as_str().unwrap().contains("environment"));
+}
+
+fn write_collection(dir: &std::path::Path, name: &str) {
+    std::fs::create_dir_all(dir.join("environments")).unwrap();
+    std::fs::write(dir.join("sankh.toml"), format!("name = \"{name}\"\n")).unwrap();
+    std::fs::write(
+        dir.join("environments/dev.env"),
+        "BASE_URL=http://example\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("01.sh"), "curl x\n").unwrap();
+}
+
+#[tokio::test]
+async fn adding_a_folder_of_collections_returns_each() {
+    let parent = folder(&[]);
+    write_collection(&parent.path().join("users"), "Users");
+    write_collection(&parent.path().join("payments"), "Payments");
+    let (s, _) = state_of(&[], None);
+    let (status, body) = call(
+        &s,
+        "POST",
+        "/api/collections",
+        &[],
+        Some(json!({ "path": parent.path().display().to_string() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let added = body["added"].as_array().unwrap();
+    assert_eq!(added.len(), 2);
+    for slot in added {
+        let id = slot["id"].as_str().unwrap();
+        let (status, envs) = call(&s, "GET", &format!("/api/c/{id}/envs"), &[], None).await;
+        assert_eq!(status, StatusCode::OK, "{envs}");
+        assert_eq!(envs["envs"][0], "dev");
+    }
+}
+
+#[tokio::test]
+async fn refresh_picks_up_collections_and_splits_a_linked_parent() {
+    let home = folder(&[]);
+    write_collection(&home.path().join("users"), "Users");
+    let registry = Registry::session(&[], false).unwrap();
+    let mut state = AppState::new(registry, None, "127.0.0.1", vec![]);
+    state.import_home = Some(home.path().to_path_buf());
+    let s = Arc::new(state);
+
+    let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+    assert!(info["collections"].as_array().unwrap().is_empty());
+
+    let (status, body) = call(&s, "POST", "/api/collections/refresh", &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["added"][0]["id"], "users");
+
+    let (status, _) = call(&s, "DELETE", "/api/collections/users", &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+    assert!(
+        info["collections"].as_array().unwrap().is_empty(),
+        "an unlinked folder stays unlinked until refresh"
+    );
+
+    let (status, body) = call(&s, "POST", "/api/collections/refresh", &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["added"][0]["id"], "users");
+}
+
+#[tokio::test]
+async fn refresh_splits_a_home_folder_that_was_one_collection() {
+    let home = folder(&[]);
+    let registry = Registry::session(&[home.path().to_path_buf()], false).unwrap();
+    let mut state = AppState::new(registry, None, "127.0.0.1", vec![]);
+    state.import_home = Some(home.path().canonicalize().unwrap());
+    let s = Arc::new(state);
+    write_collection(&home.path().join("users"), "Users");
+    let (status, body) = call(&s, "POST", "/api/collections/refresh", &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+    let ids: Vec<_> = info["collections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["users"]);
+    let (status, envs) = call(&s, "GET", "/api/c/users/envs", &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{envs}");
+    assert_eq!(envs["envs"][0], "dev");
+}
+
+#[tokio::test]
+async fn refresh_reloads_a_tree_after_a_file_is_added() {
+    let dir = folder(&[("sankh.toml", "name = \"Api\"\n"), ("01.sh", "curl a\n")]);
+    let (s, cid) = state(&dir, None);
+    std::fs::write(dir.path().join("02.sh"), "curl b\n").unwrap();
+    let (status, body) = call(&s, "POST", "/api/collections/refresh", &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["added"].as_array().unwrap().is_empty());
+    let (status, tree) = call(&s, "GET", &format!("/api/c/{cid}/tree"), &[], None).await;
+    assert_eq!(status, StatusCode::OK, "{tree}");
+    assert!(tree.to_string().contains("02.sh"), "{tree}");
+}
+
+#[tokio::test]
+async fn a_collection_dropped_into_the_home_folder_is_adopted() {
+    let home = folder(&[]);
+    let registry = Registry::session(&[], false).unwrap();
+    let mut state = AppState::new(registry, None, "127.0.0.1", vec![]);
+    state.import_home = Some(home.path().canonicalize().unwrap());
+    let s = Arc::new(state);
+    s.start_watching();
+
+    let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+    assert!(info["collections"].as_array().unwrap().is_empty());
+
+    write_collection(&home.path().join("users"), "Users");
+    let mut found = false;
+    for _ in 0..40 {
+        let (_, info) = call(&s, "GET", "/api/info", &[], None).await;
+        if info["collections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == "users")
+        {
+            found = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(found, "dropped collection was not adopted");
 }
 
 #[test]

@@ -413,3 +413,34 @@ fn workspace_add_list_and_unlink() {
         .stdout(predicate::str::contains("scratch"))
         .stdout(predicate::str::contains("users-api").not());
 }
+
+#[test]
+fn run_refuses_a_folder_of_collections() {
+    let cfg = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        &dir.path().join("users"),
+        "sankh.toml",
+        "name = \"Users\"\n",
+    );
+    write(
+        &dir.path().join("users"),
+        "environments/dev.env",
+        "BASE_URL=http://users\n",
+    );
+    write(&dir.path().join("users"), "a.sh", "curl x\n");
+    write(&dir.path().join("pay"), "sankh.toml", "name = \"Pay\"\n");
+    write(
+        &dir.path().join("pay"),
+        "environments/dev.env",
+        "BASE_URL=http://pay\n",
+    );
+    sankh(cfg.path())
+        .arg("run")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Users"))
+        .stderr(predicate::str::contains("Pay"))
+        .stderr(predicate::str::contains("Run each path"));
+}

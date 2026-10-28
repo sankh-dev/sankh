@@ -16,19 +16,20 @@ brew install --cask sankh-dev/tap/sankh-desktop
 The cask clears the quarantine flag on install, so the unsigned app opens
 without a Gatekeeper prompt. `brew upgrade` picks up new releases.
 
-Or get the installer for your platform from the
-[latest release](https://github.com/sankh-dev/sankh/releases/latest):
+Or download the installer for your platform. These links always point at the
+latest release:
 
-| Platform | File |
+| Platform | Download |
 | --- | --- |
-| macOS (Apple silicon) | `Sankh_<version>_aarch64.dmg` |
-| macOS (Intel) | `Sankh_<version>_x64.dmg` |
-| Windows | `Sankh_<version>_x64-setup.exe` or `Sankh_<version>_x64_en-US.msi` |
-| Linux | `Sankh_<version>_amd64.AppImage` |
-| Linux (Debian, Ubuntu) | `Sankh_<version>_amd64.deb` |
-| Linux (Fedora, RHEL, openSUSE) | `Sankh-<version>-1.x86_64.rpm` |
+| macOS (Apple silicon) | [Sankh-macos-aarch64.dmg](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-macos-aarch64.dmg) |
+| macOS (Intel) | [Sankh-macos-x64.dmg](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-macos-x64.dmg) |
+| Windows | [Sankh-windows-setup.exe](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-windows-setup.exe) or [Sankh-windows-x64.msi](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-windows-x64.msi) |
+| Linux | [Sankh-linux-amd64.AppImage](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-amd64.AppImage) |
+| Linux (Debian, Ubuntu) | [Sankh-linux-amd64.deb](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-amd64.deb) |
+| Linux (Fedora, RHEL, openSUSE) | [Sankh-linux-x86_64.rpm](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-x86_64.rpm) |
 
-Each file has a matching `.sha256` checksum next to it. There is no desktop
+The release also has the versioned filename (`Sankh_<version>_...`) and a
+matching `.sha256` checksum next to each file. There is no desktop
 build for Linux arm64 yet. [Install](install.md#desktop-app) has
 copy-paste commands for each OS and Linux distribution, and how to upgrade and
 uninstall.

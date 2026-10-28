@@ -155,7 +155,24 @@ fn main() -> ExitCode {
 }
 
 fn cmd_run(args: RunArgs) -> Result<ExitCode> {
-    let (collection, target) = Collection::discover(&args.path)?;
+    let roots = Collection::roots_for(&args.path)?;
+    if roots.len() > 1 {
+        let mut lines = Vec::new();
+        for root in &roots {
+            let label = Collection::open(root)
+                .map(|c| format!("{} ({})", c.name(), root.display()))
+                .unwrap_or_else(|_| root.display().to_string());
+            lines.push(format!("  {label}"));
+        }
+        bail!(
+            "{} contains {} collections:\n{}\nRun each path on its own.",
+            args.path.display(),
+            roots.len(),
+            lines.join("\n")
+        );
+    }
+    let collection = Collection::open(&roots[0])?;
+    let target = args.path.canonicalize()?;
     let trusted = trust::ensure(&collection, args.trust)?;
     let env = Env::load(&collection, args.env.as_deref())?;
     let filters = Filters {

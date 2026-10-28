@@ -85,6 +85,19 @@ jobs:
             cp "$f" out/
           done
           cd out
+          # Stable names so sankh.dev can link releases/latest/download/<name>
+          # without knowing the version baked into the Tauri filename.
+          for f in *; do
+            case "$f" in
+              *_aarch64.dmg) cp "$f" Sankh-macos-aarch64.dmg ;;
+              *_x64.dmg) cp "$f" Sankh-macos-x64.dmg ;;
+              *_x64-setup.exe) cp "$f" Sankh-windows-setup.exe ;;
+              *_x64_en-US.msi) cp "$f" Sankh-windows-x64.msi ;;
+              *_amd64.AppImage) cp "$f" Sankh-linux-amd64.AppImage ;;
+              *_amd64.deb) cp "$f" Sankh-linux-amd64.deb ;;
+              *.rpm) cp "$f" Sankh-linux-x86_64.rpm ;;
+            esac
+          done
           for f in *; do
             if command -v sha256sum >/dev/null; then
               sha256sum "$f" > "$f.sha256"

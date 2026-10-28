@@ -1,14 +1,28 @@
 //! File watching for live tree refresh in the UI. One watcher covers every
 //! collection root; roots are added and removed as the workspace changes.
+//!
+//! `~/sankh-collections` is watched too, recursively, so a folder copied in
+//! becomes a collection once its `sankh.toml` or `environments/` appears.
+//! Only an immediate child of that directory is adopted. Events inside a
+//! collection that is already open belong to that collection, because the
+//! longer root wins.
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
+use sankh_core::collection;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 type Roots = Arc<RwLock<Vec<(String, PathBuf)>>>;
+
+/// Root id for the import-home watch. Not a collection id.
+pub const IMPORT_ID: &str = "\0import";
+
+/// Broadcast when the set of collections changed (a folder was adopted).
+pub const COLLECTIONS_CHANGED: &str = "\0collections";
 
 pub struct Watcher {
     inner: RecommendedWatcher,
@@ -16,9 +30,10 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    /// Starts an (initially empty) watcher. Changes are debounced and sent as
-    /// the id of the collection they belong to. Watching is best effort.
-    pub fn start(changes: broadcast::Sender<String>) -> Option<Watcher> {
+    /// Starts an (initially empty) watcher. Collection-file changes are
+    /// debounced and sent as the collection id. A new collection folder under
+    /// the import home is sent on `imports` instead. Watching is best effort.
+    pub fn start(changes: broadcast::Sender<String>, imports: Sender<PathBuf>) -> Option<Watcher> {
         let roots: Roots = Arc::default();
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let lookup = roots.clone();
@@ -33,7 +48,12 @@ impl Watcher {
                     .iter()
                     .filter(|(_, root)| path.starts_with(root))
                     .max_by_key(|(_, root)| root.as_os_str().len());
-                if let Some((id, _)) = owner {
+                let Some((id, root)) = owner else { continue };
+                if id == IMPORT_ID {
+                    if let Some(child) = collection::collection_child(root, path) {
+                        let _ = tx.send(format!("\0{}", child.display()));
+                    }
+                } else {
                     let _ = tx.send(id.clone());
                 }
             }
@@ -52,7 +72,13 @@ impl Watcher {
                     }
                 }
                 for id in ids {
-                    let _ = changes.send(id);
+                    if let Some(path) = id.strip_prefix('\0') {
+                        if !path.is_empty() {
+                            let _ = imports.send(PathBuf::from(path));
+                        }
+                    } else {
+                        let _ = changes.send(id);
+                    }
                 }
             }
         });

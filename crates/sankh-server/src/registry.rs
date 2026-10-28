@@ -103,10 +103,36 @@ impl Registry {
         }
     }
 
-    /// Adds the collection containing `path`; returns its id.
-    pub fn add(&mut self, path: &Path) -> Result<String, WorkspaceError> {
-        let id = self.mutate(|ws| ws.add(path).map(|e| e.id))?;
-        Ok(id)
+    /// Adds the collections implied by `path` (one folder, or each collection
+    /// inside a folder of collections). Returns their ids.
+    pub fn add(&mut self, path: &Path) -> Result<Vec<String>, WorkspaceError> {
+        let ids =
+            self.mutate(|ws| Ok(ws.add(path)?.into_iter().map(|e| e.id).collect::<Vec<_>>()))?;
+        Ok(ids)
+    }
+
+    /// Adds collection folders that are sitting in `home`. See
+    /// [`Workspace::adopt_home`].
+    pub fn adopt_home(&mut self, home: &Path) -> Result<Vec<String>, WorkspaceError> {
+        self.mutate(|ws| {
+            Ok(ws
+                .adopt_home(home, &scratch::dir())?
+                .into_iter()
+                .map(|e| e.id)
+                .collect::<Vec<_>>())
+        })
+    }
+
+    /// Adds one newly appeared collection folder. Already linked or overlapping
+    /// paths are skipped so a file watcher can call this on every event.
+    pub fn adopt_child(&mut self, path: &Path) -> Result<Vec<String>, WorkspaceError> {
+        self.mutate(|ws| match ws.add(path) {
+            Ok(entries) => Ok(entries.into_iter().map(|e| e.id).collect()),
+            Err(WorkspaceError::AlreadyAdded { .. } | WorkspaceError::Overlaps { .. }) => {
+                Ok(Vec::new())
+            }
+            Err(e) => Err(e),
+        })
     }
 
     /// Unlinks a collection. Files on disk are untouched.

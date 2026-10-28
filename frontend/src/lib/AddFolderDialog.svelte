@@ -23,6 +23,10 @@
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 
+	let childCollections = $derived(
+		listing && !listing.collection ? listing.dirs.filter((d) => d.collection).length : 0
+	);
+
 	async function browse(to?: string) {
 		error = null;
 		try {
@@ -108,11 +112,21 @@
 		{/if}
 		{#if listing?.collection}
 			<p class="ok">This folder looks like a Sankh collection.</p>
+		{:else if childCollections > 0}
+			<p class="ok">
+				This folder contains {childCollections}
+				{childCollections === 1 ? 'collection' : 'collections'}. Each one is added on its own, with its own
+				environments.
+			</p>
 		{/if}
 		{#if error}<p class="error">{error}</p>{/if}
 		<div class="buttons">
 			<button type="button" onclick={onclose}>Cancel</button>
-			<button type="submit" class="primary" disabled={busy || !path.trim()}>Add folder</button>
+			<button type="submit" class="primary" disabled={busy || !path.trim()}>
+				{childCollections > 0
+					? `Add ${childCollections} ${childCollections === 1 ? 'collection' : 'collections'}`
+					: 'Add folder'}
+			</button>
 		</div>
 	</form>
 </div>

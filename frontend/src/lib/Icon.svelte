@@ -25,6 +25,7 @@
 		lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
 		collapse: 'M7 4l5 5 5-5M7 20l5-5 5 5',
 		expand: 'M7 9l5-5 5 5M7 15l5 5 5-5',
+		refresh: 'M21 4v6h-6M3 20v-6h6M20.5 10A9 9 0 0 0 6 5.3M3.5 14A9 9 0 0 0 18 18.7',
 		braces:
 			'M8 4H7a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h1M16 4h1a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-1'
 	} as const;

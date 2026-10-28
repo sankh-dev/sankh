@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { asset, resolve } from '$app/paths';
 	import CopyCommand from '#lib/CopyCommand.svelte';
 	import { GITHUB_URL } from '#lib/docs.ts';
@@ -6,6 +7,75 @@
 	let { data } = $props();
 
 	const INSTALL = 'curl -fsSL https://sankh.dev/install.sh | sh';
+	const RELEASE = `${GITHUB_URL}/releases/latest/download`;
+	const WINDOWS_CLI = `powershell -ExecutionPolicy Bypass -c "irm ${RELEASE}/sankh-installer.ps1 | iex"`;
+
+	type Product = 'cli' | 'app';
+	type OsId = 'mac' | 'windows' | 'linux';
+
+	interface Offer {
+		command?: string;
+		prompt?: string;
+		download?: { label: string; href: string };
+		alt?: { label: string; href: string };
+		instruction: string;
+	}
+
+	const osOptions: { id: OsId; label: string }[] = [
+		{ id: 'mac', label: 'macOS' },
+		{ id: 'windows', label: 'Windows' },
+		{ id: 'linux', label: 'Linux' }
+	];
+
+	const cliUnix: Offer = {
+		command: INSTALL,
+		instruction: 'Installs the sankh command in ~/.local/bin. No root required.'
+	};
+
+	const offers: Record<Product, Record<OsId, Offer>> = {
+		cli: {
+			mac: cliUnix,
+			linux: cliUnix,
+			windows: {
+				command: WINDOWS_CLI,
+				prompt: '>',
+				instruction: 'Installs sankh.exe and adds it to your PATH. Run it from Git Bash.'
+			}
+		},
+		app: {
+			mac: {
+				download: { label: 'Download for Mac', href: `${RELEASE}/Sankh-macos-aarch64.dmg` },
+				alt: { label: 'Intel Mac', href: `${RELEASE}/Sankh-macos-x64.dmg` },
+				instruction: 'Open the disk image and drag Sankh to Applications. The first time, right-click the app and choose Open.'
+			},
+			windows: {
+				download: { label: 'Download for Windows', href: `${RELEASE}/Sankh-windows-setup.exe` },
+				instruction: 'Run the setup. If SmartScreen appears, choose More info, then Run anyway.'
+			},
+			linux: {
+				download: { label: 'Download for Linux', href: `${RELEASE}/Sankh-linux-amd64.deb` },
+				instruction: 'Then install it with sudo apt install ./Sankh-linux-amd64.deb.'
+			}
+		}
+	};
+
+	let product = $state<Product>('app');
+	let os = $state<OsId>('linux');
+	let detected = $state<OsId | null>(null);
+	let offer = $derived(offers[product][os]);
+
+	onMount(() => {
+		const ua = navigator.userAgent;
+		const found: OsId | null = /Windows/i.test(ua)
+			? 'windows'
+			: /Mac OS X|Macintosh/i.test(ua)
+				? 'mac'
+				: /Linux/i.test(ua)
+					? 'linux'
+					: null;
+		detected = found;
+		if (found) os = found;
+	});
 
 	const runLines = [
 		{ name: 'Log in', status: 200, ms: 38, path: 'auth/01-login.sh', capture: 'TOKEN=***' },
@@ -16,17 +86,6 @@
 		{ name: 'Deleted pet is gone', status: 404, ms: 4, path: 'pets/05-get-deleted.sh' }
 	];
 
-	const installOptions = [
-		{ label: 'Shell (Linux, macOS)', command: INSTALL },
-		{ label: 'Pinned version', command: 'curl -fsSL https://sankh.dev/install.sh | SANKH_VERSION=0.9.1 sh' },
-		{ label: 'Homebrew (macOS, Linux)', command: 'brew install sankh-dev/tap/sankh' },
-		{
-			label: 'PowerShell (Windows)',
-			prompt: '>',
-			command: `powershell -ExecutionPolicy Bypass -c "irm ${GITHUB_URL}/releases/latest/download/sankh-installer.ps1 | iex"`
-		},
-		{ label: 'Desktop app (macOS, Homebrew)', command: 'brew install --cask sankh-dev/tap/sankh-desktop' }
-	];
 </script>
 
 <svelte:head>
@@ -54,11 +113,41 @@
 				files, each holding one <code>curl</code> command. One binary runs them in CI or serves a small
 				web UI, and the desktop app opens the same UI in a native window.
 			</p>
-			<CopyCommand command={INSTALL} />
-			<div class="cta">
-				<a class="btn primary" href={resolve('/docs/[slug]', { slug: 'quickstart' })}>Get started</a>
-				<a class="btn" href={GITHUB_URL} rel="external">View on GitHub</a>
+			<div class="picker">
+				<div class="segments" role="group" aria-label="What to install">
+					<button type="button" class={{ on: product === 'cli' }} aria-pressed={product === 'cli'} onclick={() => (product = 'cli')}>
+						CLI
+					</button>
+					<button type="button" class={{ on: product === 'app' }} aria-pressed={product === 'app'} onclick={() => (product = 'app')}>
+						Desktop app
+					</button>
+				</div>
+				<div class="segments" role="group" aria-label="Operating system">
+					{#each osOptions as opt (opt.id)}
+						<button type="button" class={{ on: os === opt.id }} aria-pressed={os === opt.id} onclick={() => (os = opt.id)}>
+							{opt.label}
+							{#if detected === opt.id}<span class="yours">Your system</span>{/if}
+						</button>
+					{/each}
+				</div>
 			</div>
+			{#if offer.command}
+				<CopyCommand command={offer.command} prompt={offer.prompt} />
+			{/if}
+			{#if offer.download}
+				<div class="cta">
+					<a class="btn primary" href={offer.download.href} rel="external">{offer.download.label}</a>
+					{#if offer.alt}
+						<a class="btn" href={offer.alt.href} rel="external">{offer.alt.label}</a>
+					{/if}
+				</div>
+			{/if}
+			<p class="hint">{offer.instruction}</p>
+			<p class="more hero-more">
+				<a href={resolve('/docs/[slug]', { slug: 'quickstart' })}>Get started</a>
+				<a href={resolve('/docs/[slug]', { slug: 'install' })}>Install guide</a>
+				<a href={GITHUB_URL} rel="external">GitHub</a>
+			</p>
 		</div>
 		<div class="hero-code" aria-label="Example request file">
 			<div class="file-tab">pets/02-create.sh</div>
@@ -129,8 +218,8 @@
 			<img
 				src={asset('serve.png')}
 				alt="The Sankh web UI showing the petstore collection, the Create pet request editor, and a passing run"
-				width="1441"
-				height="656"
+				width="1440"
+				height="740"
 				loading="lazy"
 			/>
 			<figcaption><code>sankh serve examples/petstore</code></figcaption>
@@ -235,47 +324,6 @@
 	</div>
 </section>
 
-<section class="section" id="install">
-	<div class="wrap install">
-		<div>
-			<h2>Install</h2>
-			<p class="section-lede">
-				Sankh needs <code>curl</code> and a POSIX shell at run time. On Windows, use Git Bash or WSL.
-			</p>
-			<ul class="install-list">
-				{#each installOptions as opt (opt.label)}
-					<li>
-						<div class="caption">{opt.label}</div>
-						<CopyCommand command={opt.command} prompt={opt.prompt} />
-					</li>
-				{/each}
-			</ul>
-			<p class="more">
-				<a href={resolve('/docs/[slug]', { slug: 'install' })}
-					>All install options: Linux packages, WSL, manual download, from source</a
-				>
-			</p>
-			<div class="desktop">
-				<div>
-					<div class="caption">Desktop app</div>
-					<p>
-						Installers for macOS (<code>.dmg</code>), Windows (<code>.exe</code>, <code>.msi</code>) and
-						Linux (<code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code>). Not code signed yet; the
-						<a href={resolve('/docs/[slug]', { slug: 'install' })}>install guide</a> has step-by-step
-						instructions for every OS and distribution, plus upgrading and uninstalling.
-					</p>
-				</div>
-				<a class="btn" href="{GITHUB_URL}/releases/latest" rel="external">Download</a>
-			</div>
-		</div>
-		<div class="stack">
-			<div class="caption">Then</div>
-			{@html data.quickstart}
-			<a href={resolve('/docs/[slug]', { slug: 'quickstart' })}>Read the quickstart</a>
-		</div>
-	</div>
-</section>
-
 <style>
 	.hero {
 		padding: 72px 0 56px;
@@ -315,11 +363,69 @@
 		max-width: 34em;
 	}
 
+	.picker {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 8px;
+		margin-bottom: 16px;
+	}
+
+	.segments {
+		display: inline-flex;
+		flex-wrap: wrap;
+		gap: 2px;
+		padding: 3px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--panel);
+	}
+
+	.segments button {
+		border: 0;
+		background: transparent;
+		color: var(--muted);
+		padding: 7px 12px;
+		border-radius: 7px;
+		font: 600 13px/1.2 var(--sans);
+		cursor: pointer;
+	}
+
+	.segments button.on {
+		background: var(--panel-2);
+		color: var(--text);
+	}
+
+	.yours {
+		margin-left: 6px;
+		color: var(--ok);
+		font-size: 11px;
+		font-weight: 600;
+	}
+
+	.hint {
+		margin: 12px 0 0;
+		color: var(--muted);
+		font-size: 14px;
+		max-width: 36em;
+	}
+
+	.hero-more {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+	}
+
+	.hero-more a {
+		margin: 0;
+	}
+
 	.cta {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
-		margin-top: 20px;
+		align-items: center;
+		margin-top: 4px;
 	}
 
 	.hero-code {
@@ -476,52 +582,10 @@
 		margin: 20px 0 0;
 	}
 
-	.install {
-		display: flex;
-		flex-direction: column;
-		gap: 32px;
-	}
-
-	.install-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 16px 24px;
-	}
-
-	.install-list .caption {
-		margin-bottom: 8px;
-	}
-
-	.desktop {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 24px;
-		margin-top: 24px;
-		padding: 18px 22px;
-		background: var(--panel);
-		border: 1px solid var(--border);
-		border-radius: 12px;
-	}
-
-	.desktop p {
-		margin: 8px 0 0;
-		color: var(--muted);
-		font-size: 15px;
-	}
-
-	.desktop .btn {
-		flex: none;
-	}
-
 	@media (max-width: 860px) {
 		.hero-grid,
 		.split,
-		.cards,
-		.install-list {
+		.cards {
 			grid-template-columns: minmax(0, 1fr);
 		}
 
@@ -582,15 +646,6 @@
 
 		.exit {
 			width: 100%;
-		}
-
-		.desktop {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.desktop .btn {
-			justify-content: center;
 		}
 
 		.exit th,

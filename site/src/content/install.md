@@ -144,10 +144,11 @@ With Homebrew (recommended, handles Gatekeeper and upgrades):
 brew install --cask sankh-dev/tap/sankh-desktop
 ```
 
-Or download the `.dmg` for your Mac (`Sankh_<version>_aarch64.dmg` for Apple
-silicon, `Sankh_<version>_x64.dmg` for Intel), open it and drag **Sankh** to
-**Applications**. The first time, right-click the app and choose **Open**, or
-run:
+Or download the disk image for your Mac
+([Apple silicon](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-macos-aarch64.dmg),
+[Intel](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-macos-x64.dmg)),
+open it and drag **Sankh** to **Applications**. The first time, right-click
+the app and choose **Open**, or run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Sankh.app
@@ -155,14 +156,25 @@ xattr -dr com.apple.quarantine /Applications/Sankh.app
 
 ### Windows
 
-Download `Sankh_<version>_x64-setup.exe` (per-user install) or
-`Sankh_<version>_x64_en-US.msi` (for managed or machine-wide installs) and
-run it. In the SmartScreen prompt choose **More info**, then **Run anyway**.
+Download [Sankh-windows-setup.exe](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-windows-setup.exe)
+(per-user install) or
+[Sankh-windows-x64.msi](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-windows-x64.msi)
+(for managed or machine-wide installs) and run it. In the SmartScreen prompt
+choose **More info**, then **Run anyway**.
 
 The app needs [Git for Windows](https://git-scm.com/download/win) to run
 requests; it finds a standard Git install even when Git Bash is not on `PATH`.
 
 ### Debian, Ubuntu, Linux Mint, Pop!_OS
+
+[Sankh-linux-amd64.deb](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-amd64.deb)
+
+```bash
+curl -fsSLO https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-amd64.deb
+sudo apt install ./Sankh-linux-amd64.deb
+```
+
+Pin a version when the install must be reproducible:
 
 ```bash
 curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.9.1/Sankh_0.9.1_amd64.deb
@@ -172,6 +184,16 @@ sudo apt install ./Sankh_0.9.1_amd64.deb
 `apt` pulls in WebKitGTK and the other libraries the app needs.
 
 ### Fedora, RHEL, CentOS Stream, openSUSE
+
+[Sankh-linux-x86_64.rpm](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-x86_64.rpm)
+
+```bash
+curl -fsSLO https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-x86_64.rpm
+sudo dnf install ./Sankh-linux-x86_64.rpm       # Fedora, RHEL, CentOS Stream
+sudo zypper install ./Sankh-linux-x86_64.rpm    # openSUSE
+```
+
+Pin a version when the install must be reproducible:
 
 ```bash
 curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.9.1/Sankh-0.9.1-1.x86_64.rpm
@@ -183,6 +205,16 @@ sudo zypper install ./Sankh-0.9.1-1.x86_64.rpm    # openSUSE
 
 The AppImage runs on most x86_64 distributions (Arch, Manjaro, Void, ...)
 without installing:
+
+[Sankh-linux-amd64.AppImage](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-amd64.AppImage)
+
+```bash
+curl -fsSLO https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-linux-amd64.AppImage
+chmod +x Sankh-linux-amd64.AppImage
+./Sankh-linux-amd64.AppImage
+```
+
+Pin a version when the install must be reproducible:
 
 ```bash
 curl -fsSLO https://github.com/sankh-dev/sankh/releases/download/v0.9.1/Sankh_0.9.1_amd64.AppImage

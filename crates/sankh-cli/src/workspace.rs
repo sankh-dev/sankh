@@ -32,7 +32,7 @@ pub fn run(action: Action) -> Result<()> {
             let mut ws = Workspace::load()?;
             let mut added = Vec::new();
             for p in &paths {
-                added.push(ws.add(p)?);
+                added.extend(ws.add(p)?);
             }
             ws.save()?;
             for e in added {

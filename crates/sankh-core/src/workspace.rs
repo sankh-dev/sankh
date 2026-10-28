@@ -79,8 +79,9 @@ impl Workspace {
         std::fs::write(path, text).map_err(|e| store_err(path, e))
     }
 
-    /// Adds the collection containing `path` and returns its entry.
-    pub fn add(&mut self, path: &Path) -> Result<Entry, WorkspaceError> {
+    /// Adds the collection containing `path`, or each collection inside a
+    /// folder of collections. Returns the entries that were newly added.
+    pub fn add(&mut self, path: &Path) -> Result<Vec<Entry>, WorkspaceError> {
         self.add_reserving(path, &scratch::dir())
     }
 
@@ -89,7 +90,87 @@ impl Workspace {
         &mut self,
         path: &Path,
         scratch_dir: &Path,
-    ) -> Result<Entry, WorkspaceError> {
+    ) -> Result<Vec<Entry>, WorkspaceError> {
+        let roots = Collection::roots_for(path)?;
+        self.add_roots(&roots, scratch_dir)
+    }
+
+    /// Adds collection folders found directly inside `home`. When `home` itself
+    /// is linked and it contains collection folders, that entry is replaced by
+    /// the children so each keeps its own environments.
+    ///
+    /// An empty result means every child was already linked. A folder the user
+    /// unlinked is added again: this is the explicit rescan, not startup.
+    pub fn adopt_home(
+        &mut self,
+        home: &Path,
+        scratch_dir: &Path,
+    ) -> Result<Vec<Entry>, WorkspaceError> {
+        if !home.exists() {
+            return Ok(Vec::new());
+        }
+        let home = home.canonicalize().map_err(|_| {
+            WorkspaceError::Collection(CollectionError::NotFound(home.to_path_buf()))
+        })?;
+        let children = crate::collection::child_collection_roots(&home)?;
+        if children.is_empty() {
+            return Ok(Vec::new());
+        }
+        let snapshot = self.collections.clone();
+        if let Some(pos) = self.collections.iter().position(|e| e.path == home) {
+            self.collections.remove(pos);
+        }
+        match self.add_roots(&children, scratch_dir) {
+            Ok(added) => Ok(added),
+            Err(WorkspaceError::AlreadyAdded { .. }) => {
+                self.collections = snapshot;
+                Ok(Vec::new())
+            }
+            Err(e) => {
+                self.collections = snapshot;
+                Err(e)
+            }
+        }
+    }
+
+    fn add_roots(
+        &mut self,
+        roots: &[PathBuf],
+        scratch_dir: &Path,
+    ) -> Result<Vec<Entry>, WorkspaceError> {
+        let snapshot = self.collections.clone();
+        let mut added = Vec::new();
+        let mut already: Option<WorkspaceError> = None;
+        for root in roots {
+            match self.add_one(root, scratch_dir) {
+                Ok(entry) => added.push(entry),
+                Err(e @ WorkspaceError::AlreadyAdded { .. }) => {
+                    if already.is_none() {
+                        already = Some(e);
+                    }
+                }
+                Err(e) => {
+                    self.collections = snapshot;
+                    return Err(e);
+                }
+            }
+        }
+        if added.is_empty() {
+            self.collections = snapshot;
+            return Err(already.unwrap_or_else(|| {
+                WorkspaceError::Unknown(
+                    roots
+                        .first()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                )
+            }));
+        }
+        Ok(added)
+    }
+
+    /// Adds one already-resolved collection root.
+    fn add_one(&mut self, path: &Path, scratch_dir: &Path) -> Result<Entry, WorkspaceError> {
         let (collection, _) = Collection::discover(path)?;
         let root = collection.root.clone();
         let scratch_dir = scratch_dir
@@ -246,12 +327,12 @@ mod tests {
         let a = ws
             .add_reserving(&users.join("environments"), &scratch)
             .unwrap();
-        assert_eq!(a.id, "api");
-        assert_eq!(a.path, users.canonicalize().unwrap());
+        assert_eq!(a[0].id, "api");
+        assert_eq!(a[0].path, users.canonicalize().unwrap());
         let b = ws.add_reserving(&payments, &scratch).unwrap();
-        assert_eq!(b.id, "api-2");
+        assert_eq!(b[0].id, "api-2");
         let c = ws.add_reserving(&scratch_named, &scratch).unwrap();
-        assert_eq!(c.id, "scratch-2");
+        assert_eq!(c[0].id, "scratch-2");
 
         assert!(matches!(
             ws.add_reserving(&users, &scratch),
@@ -269,7 +350,7 @@ mod tests {
         ));
         assert!(matches!(
             ws.add_reserving(&root.join("data"), &scratch),
-            Err(WorkspaceError::Overlaps { id, .. }) if id == "scratch"
+            Err(WorkspaceError::Scratch)
         ));
 
         let file = root.join("cfg/workspace.toml");
@@ -303,5 +384,94 @@ mod tests {
         let opened = ws.open_entries();
         assert_eq!(opened.len(), 1);
         assert!(opened[0].collection.is_err());
+    }
+
+    #[test]
+    fn a_folder_of_collections_adds_each_with_its_environments() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let scratch = root.join("scratch");
+        let parent = root.join("shared");
+        let users = collection(&parent, "users", Some("Users"));
+        std::fs::write(
+            users.join("environments/dev.env"),
+            "BASE_URL=http://users\n",
+        )
+        .unwrap();
+        let payments = collection(&parent, "payments", Some("Payments"));
+        std::fs::write(
+            payments.join("environments/dev.env"),
+            "BASE_URL=http://pay\n",
+        )
+        .unwrap();
+
+        let mut ws = Workspace::default();
+        let added = ws.add_reserving(&parent, &scratch).unwrap();
+        assert_eq!(added.len(), 2);
+        let mut names: Vec<_> = added.iter().map(|e| e.id.clone()).collect();
+        names.sort();
+        assert_eq!(names, ["payments", "users"]);
+        for entry in &added {
+            let opened = Collection::open(&entry.path).unwrap();
+            assert_eq!(crate::env::list_envs(&opened), vec!["dev".to_string()]);
+        }
+
+        let again = ws.add_reserving(&parent, &scratch);
+        assert!(matches!(again, Err(WorkspaceError::AlreadyAdded { .. })));
+    }
+
+    #[test]
+    fn a_real_collection_is_not_split() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let scratch = root.join("scratch");
+        let api = collection(root, "api", Some("API"));
+        collection(&api, "nested", Some("Nested"));
+        let added = Workspace::default().add_reserving(&api, &scratch).unwrap();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].id, "api");
+    }
+
+    #[test]
+    fn a_bare_folder_of_scripts_stays_one_collection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let bare = root.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::write(bare.join("01.sh"), "curl x\n").unwrap();
+        let added = Workspace::default()
+            .add_reserving(&bare, &root.join("scratch"))
+            .unwrap();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].path, bare.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn adopt_home_adds_what_is_already_there_and_splits_a_linked_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let scratch = root.join("scratch");
+        let home = root.join("sankh-collections");
+        std::fs::create_dir_all(&home).unwrap();
+        let mut ws = Workspace::default();
+        let linked = ws.add_reserving(&home, &scratch).unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0].path, home.canonicalize().unwrap());
+
+        let users = collection(&home, "users", Some("Users"));
+        std::fs::write(users.join("environments/dev.env"), "TOKEN=x\n").unwrap();
+        let split = ws.adopt_home(&home, &scratch).unwrap();
+        assert_eq!(split.len(), 1);
+        let home_canon = home.canonicalize().unwrap();
+        assert!(ws.collections.iter().all(|e| e.path != home_canon));
+        assert_eq!(ws.collections.len(), 1);
+        let opened = Collection::open(&ws.collections[0].path).unwrap();
+        assert_eq!(crate::env::list_envs(&opened), vec!["dev".to_string()]);
+
+        ws.remove(&ws.collections[0].id.clone()).unwrap();
+        assert!(ws.collections.is_empty());
+        let added = ws.adopt_home(&home, &scratch).unwrap();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].id, "users");
     }
 }
