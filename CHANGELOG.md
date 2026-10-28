@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-28
+
+### Fixed
+
+- **Windows requests stay in the app.** Each request no longer opens a console window that closes when it finishes.
+- **Windows runs requests when `curl` is not on PATH.** Sankh uses Git's curl beside Git Bash, or a bundled curl. A POSIX shell is still required.
+
 ## [0.10.0] - 2026-10-28
 
 ### Added
