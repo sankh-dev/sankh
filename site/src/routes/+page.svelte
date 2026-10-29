@@ -39,7 +39,7 @@
 			windows: {
 				command: WINDOWS_CLI,
 				prompt: '>',
-				instruction: 'Installs sankh.exe and adds it to your PATH. Run it from Git Bash.'
+				instruction: 'Installs sankh.exe and adds it to your PATH. No shell or curl needed.'
 			}
 		},
 		app: {
@@ -160,7 +160,8 @@
 	<div class="wrap">
 		<h2>A collection is a folder of curl</h2>
 		<p class="section-lede">
-			Annotations live in shell comments, so every file still runs on its own, with or without Sankh.
+			Annotations live in comments, so every file is still a curl command you can run on its own.
+			Sankh never runs it: it reads the command and sends the request itself.
 			Your API collection is a git repo that runs anywhere. The UI is optional.
 		</p>
 		<div class="split">
@@ -232,7 +233,7 @@
 		<h2>All your collections, side by side</h2>
 		<p class="section-lede">
 			Plain files in git, no proprietary export format. Keep several collections open at once, each
-			with its own environments, captured values, and trust.
+			with its own environments and captured values.
 		</p>
 		<div class="cards">
 			<article class="card">
@@ -277,9 +278,9 @@
 				<thead><tr><th>Exit</th><th>Meaning</th></tr></thead>
 				<tbody>
 					<tr><td>0</td><td>All requests passed</td></tr>
-					<tr><td>1</td><td>An assertion, capture, or request failed</td></tr>
-					<tr><td>2</td><td>Usage or configuration error</td></tr>
-					<tr><td>3</td><td>The collection is not trusted</td></tr>
+					<tr><td>1</td><td>An assertion or capture failed</td></tr>
+					<tr><td>2</td><td>A file has an error; nothing was sent</td></tr>
+					<tr><td>3</td><td>A request could not be sent (DNS, TLS, timeout)</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -296,10 +297,10 @@
 		<h2>Safe by default</h2>
 		<div class="cards">
 			<article class="card">
-				<h3>Trust before running</h3>
+				<h3>Files never execute</h3>
 				<p>
-					Request files are scripts, so a cloned collection never runs until you trust it. In a git repo
-					trust is tied to the HEAD commit and lapses when it changes.
+					No shell, no <code>curl</code> process. Sankh parses each command, rejects pipes and unknown
+					flags with a precise error, and checks every file before sending anything.
 				</p>
 			</article>
 			<article class="card">
@@ -319,7 +320,7 @@
 			</article>
 		</div>
 		<p class="more">
-			<a href={resolve('/docs/[slug]', { slug: 'trust-secrets' })}>How trust and redaction work</a>
+			<a href={resolve('/docs/[slug]', { slug: 'secrets-safety' })}>Secrets and safety</a>
 		</p>
 	</div>
 </section>

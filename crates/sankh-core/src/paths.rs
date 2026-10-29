@@ -1,4 +1,4 @@
-//! Per-user directories: settings (trust, workspace) and data (Scratch).
+//! Per-user directories: settings (workspace) and data (Scratch).
 
 use std::path::PathBuf;
 

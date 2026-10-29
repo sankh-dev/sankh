@@ -10,17 +10,6 @@ export type TreeNode =
 			errors: number;
 	  };
 
-export type TrustStatus =
-	| { state: 'trusted'; path: string }
-	| { state: 'untrusted' }
-	| {
-			state: 'changed';
-			path: string;
-			trusted_head: string;
-			current_head: string;
-			changed: string[];
-	  };
-
 export interface CollectionInfo {
 	id: string;
 	name: string;
@@ -30,7 +19,6 @@ export interface CollectionInfo {
 	/** The folder is gone or cannot be opened; `error` says why. */
 	missing: boolean;
 	error: string | null;
-	trust: TrustStatus | null;
 	default_env: string | null;
 }
 
@@ -97,10 +85,21 @@ export interface CurlCommand {
 	flags: string[];
 }
 
+export type ErrorKind = 'assertion' | 'transport' | 'parse' | 'config';
+
 export interface Diagnostic {
+	/** 0 is the whole file. */
 	line: number;
 	severity: 'warning' | 'error';
 	message: string;
+	kind?: ErrorKind;
+	/** 1-based character column. */
+	column?: number;
+	/** Characters to underline from `column`. */
+	width?: number;
+	label?: string;
+	help?: string;
+	note?: string;
 }
 
 export interface ParsedRequest {
@@ -141,28 +140,58 @@ export interface AssertionResult {
 	message: string | null;
 }
 
+/** What was sent. */
+export interface RequestView {
+	method: string;
+	url: string;
+	headers: [string, string][];
+	body?: string;
+	body_size: number;
+}
+
+export interface RedirectHop {
+	status: number;
+	url: string;
+	location: string;
+}
+
 export interface ResponseView {
 	status: number;
+	/** `HTTP/1.1`, `HTTP/2.0`. */
+	version: string;
 	time_ms: number;
+	/** Until the response headers arrived. */
+	ttfb_ms?: number;
 	size: number;
 	url: string;
 	headers: [string, string][];
 	body: string;
+	/** Only part of the body is shown (see `body_capped`). */
 	body_truncated: boolean;
+	/** The body was longer than `max_body` and was not read in full. */
+	body_capped: boolean;
 	body_binary: boolean;
+	/** SHA-256 of a binary body, hex. */
+	sha256?: string;
 	body_base64?: string;
+	redirects?: RedirectHop[];
 }
 
 export interface RequestResult {
 	path: string;
 	name: string;
 	outcome: 'passed' | 'failed' | 'error' | 'cancelled';
+	/** Why an `error` / `failed` outcome happened. */
+	error_kind?: ErrorKind;
+	request?: RequestView;
 	response: ResponseView | null;
 	assertions: AssertionResult[];
 	captures: { name: string; value: string }[];
 	error: string | null;
 	warnings: string[];
-	stderr: string;
+	diagnostics?: Diagnostic[];
+	/** TLS certificate checks were skipped (`-k`). */
+	insecure?: boolean;
 	duration_ms: number;
 }
 
@@ -180,6 +209,8 @@ export type RunEvent =
 	| { type: 'running'; path: string }
 	| { type: 'result'; result: RequestResult }
 	| { type: 'cancelled'; skipped: string[] }
+	/** Some files have errors: only their results are sent, nothing ran. */
+	| { type: 'blocked'; skipped: string[] }
 	| { type: 'done'; summary: Summary };
 
 export interface RunState {
@@ -189,8 +220,10 @@ export interface RunState {
 	results: Record<string, RequestResult>;
 	current: string | null;
 	summary: Summary | null;
-	/** Paths not run because the run was stopped. */
+	/** Paths not run because the run was stopped or blocked. */
 	skipped: string[];
+	/** Files with errors stopped the run before anything was sent. */
+	blocked: boolean;
 }
 
 export interface EnvVar {

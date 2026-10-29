@@ -16,6 +16,7 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post, put};
 use sankh_core::env::Vars;
+use sankh_core::http::HostPolicy;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -42,6 +43,8 @@ pub struct ServeConfig {
     pub port: u16,
     pub token: Option<String>,
     pub allow_hosts: Vec<String>,
+    /// Hosts requests may (or may not) be sent to.
+    pub target_policy: Option<HostPolicy>,
 }
 
 pub struct AppState {
@@ -64,6 +67,8 @@ pub struct AppState {
     /// `~/sankh-collections` for a saved workspace. None for a session started
     /// with explicit paths, which does not scan that folder.
     pub import_home: Option<PathBuf>,
+    /// Limits where requests may be sent (`--allow-target`, `--deny-target`).
+    pub target_policy: Option<Arc<HostPolicy>>,
 }
 
 impl AppState {
@@ -93,6 +98,7 @@ impl AppState {
             changes,
             watcher: Mutex::new(None),
             import_home,
+            target_policy: None,
         }
     }
 
@@ -170,7 +176,6 @@ pub fn app(state: Arc<AppState>) -> Router {
         )
         .route("/default-env", put(api::put_default_env))
         .route("/captures", delete(api::clear_captures))
-        .route("/trust", get(api::get_trust).post(api::post_trust))
         .route("/reveal", post(api::reveal))
         .route("/run", post(api::start_run));
     let api = Router::new()
@@ -224,12 +229,17 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
     if !registry.persist() {
         println!("  (session only: changes to this list are not saved)");
     }
-    let state = Arc::new(AppState::new(
-        registry,
-        cfg.token.clone(),
-        &cfg.listen,
-        cfg.allow_hosts,
-    ));
+    if let Some(policy) = &cfg.target_policy {
+        for p in &policy.allow {
+            println!("  requests allowed to {p}");
+        }
+        for p in &policy.deny {
+            println!("  requests blocked to {p}");
+        }
+    }
+    let mut state = AppState::new(registry, cfg.token.clone(), &cfg.listen, cfg.allow_hosts);
+    state.target_policy = cfg.target_policy.filter(|p| !p.is_empty()).map(Arc::new);
+    let state = Arc::new(state);
 
     let host = if cfg.listen.contains(':') && !cfg.listen.starts_with('[') {
         format!("[{}]", cfg.listen)

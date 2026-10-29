@@ -4,7 +4,6 @@ use crate::output;
 use anyhow::Result;
 use sankh_core::Collection;
 use sankh_core::scratch;
-use sankh_core::trust::{TrustStatus, TrustStore};
 use sankh_core::workspace::Workspace;
 use std::path::PathBuf;
 
@@ -61,27 +60,19 @@ pub fn run(action: Action) -> Result<()> {
 
 fn list(json: bool) -> Result<()> {
     let ws = Workspace::load()?;
-    let store = TrustStore::load().unwrap_or_default();
     let mut rows = vec![serde_json::json!({
         "id": scratch::ID,
         "path": scratch::dir().display().to_string(),
         "scratch": true,
         "missing": false,
-        "trust": "trusted",
     })];
     for e in &ws.collections {
         let missing = Collection::open(&e.path).is_err();
-        let trust = match store.status(&e.path) {
-            TrustStatus::Trusted { .. } => "trusted",
-            TrustStatus::Untrusted => "untrusted",
-            TrustStatus::Changed { .. } => "changed",
-        };
         rows.push(serde_json::json!({
             "id": e.id,
             "path": e.path.display().to_string(),
             "scratch": false,
             "missing": missing,
-            "trust": if missing { "-" } else { trust },
         }));
     }
     if json {
@@ -96,11 +87,7 @@ fn list(json: bool) -> Result<()> {
         } else if r["missing"] == true {
             output::red("missing")
         } else {
-            match r["trust"].as_str() {
-                Some("trusted") => output::dim("trusted"),
-                Some(t) => output::yellow(t),
-                None => String::new(),
-            }
+            String::new()
         };
         println!("{} {path}  {note}", output::bold(&format!("{id:<20}")));
     }

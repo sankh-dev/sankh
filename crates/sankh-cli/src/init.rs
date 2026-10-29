@@ -40,7 +40,7 @@ pub fn run(path: &Path) -> Result<()> {
         bail!("{} already looks like a collection", path.display());
     }
     println!(
-        "\nNext: edit environments/dev.env, then `sankh trust {0}` and `sankh run {0}`",
+        "\nNext: edit environments/dev.env, then `sankh run {0}`",
         path.display()
     );
     Ok(())

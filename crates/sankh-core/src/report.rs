@@ -1,5 +1,6 @@
 //! Run summaries and machine-readable reports.
 
+use crate::diag::ErrorKind;
 use crate::runner::{Outcome, RequestResult};
 use serde::Serialize;
 
@@ -151,6 +152,24 @@ pub fn junit(collection: &str, results: &[RequestResult]) -> String {
     out
 }
 
+/// The process exit code for a run: 0 when everything passed, else the
+/// code of the worst failure (parse or config 2, transport 3, assertion 1).
+pub fn exit_code(results: &[RequestResult]) -> u8 {
+    let kinds: Vec<ErrorKind> = results.iter().filter_map(|r| r.failure_kind()).collect();
+    if kinds
+        .iter()
+        .any(|k| matches!(k, ErrorKind::Parse | ErrorKind::Config))
+    {
+        ErrorKind::Config.exit_code()
+    } else if kinds.contains(&ErrorKind::Transport) {
+        ErrorKind::Transport.exit_code()
+    } else if kinds.is_empty() {
+        0
+    } else {
+        ErrorKind::Assertion.exit_code()
+    }
+}
+
 pub fn failure_details(r: &RequestResult) -> String {
     let mut lines: Vec<String> = r
         .assertions
@@ -171,30 +190,43 @@ mod tests {
 
     #[test]
     fn json_report_omits_image_data() {
-        let result = RequestResult {
-            path: "logo.sh".into(),
-            name: "logo".into(),
-            outcome: Outcome::Passed,
-            response: Some(ResponseView {
-                status: 200,
-                time_ms: 1.0,
-                size: 3,
-                url: "http://x/logo.png".into(),
-                headers: Vec::new(),
-                body: "<3 bytes of binary data>".into(),
-                body_truncated: false,
-                body_binary: true,
-                body_base64: Some("AAAA".into()),
-            }),
-            assertions: Vec::new(),
-            captures: Vec::new(),
-            error: None,
-            warnings: Vec::new(),
-            stderr: String::new(),
-            duration_ms: 1.0,
-        };
+        let mut result = RequestResult::new("logo.sh".into(), "logo".into());
+        result.response = Some(ResponseView {
+            status: 200,
+            version: "HTTP/1.1".into(),
+            time_ms: 1.0,
+            ttfb_ms: None,
+            size: 3,
+            url: "http://x/logo.png".into(),
+            headers: Vec::new(),
+            body: "<3 bytes of binary data>".into(),
+            body_truncated: false,
+            body_capped: false,
+            body_binary: true,
+            sha256: None,
+            body_base64: Some("AAAA".into()),
+            redirects: Vec::new(),
+        });
         let out = json("api", &[result]);
         assert!(!out.contains("body_base64"));
         assert!(out.contains("binary data"));
+    }
+
+    #[test]
+    fn exit_codes_follow_the_worst_failure() {
+        let with = |outcome, kind| {
+            let mut r = RequestResult::new("a.sh".into(), "a".into());
+            r.outcome = outcome;
+            r.error_kind = kind;
+            r
+        };
+        let ok = with(Outcome::Passed, None);
+        let assertion = with(Outcome::Failed, Some(ErrorKind::Assertion));
+        let transport = with(Outcome::Error, Some(ErrorKind::Transport));
+        let config = with(Outcome::Error, Some(ErrorKind::Config));
+        assert_eq!(exit_code(std::slice::from_ref(&ok)), 0);
+        assert_eq!(exit_code(&[ok.clone(), assertion.clone()]), 1);
+        assert_eq!(exit_code(&[assertion.clone(), transport.clone()]), 3);
+        assert_eq!(exit_code(&[transport, config, assertion]), 2);
     }
 }

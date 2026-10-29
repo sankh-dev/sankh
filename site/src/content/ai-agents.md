@@ -14,10 +14,12 @@ sankh run my-api --env dev --report json --report-file -
 ```
 
 `--report-file -` puts the JSON report on stdout and human output on stderr.
-Exit codes are `0` passed, `1` a request failed, `2` usage error, `3` not
-trusted.
+Exit codes are `0` passed, `1` an `@expect` or `@capture` failed, `2` a file
+has an error (nothing was sent), `3` a request could not be sent. `sankh run
+--check` validates files without sending anything, which suits an agent that
+just wrote one.
 
-To teach an agent the file format and the trust rules, point it at:
+To teach an agent the file format, point it at:
 
 - [`llms.txt`](https://sankh.dev/llms.txt): a compact summary of the format,
   commands and rules, written for language models.
@@ -50,7 +52,7 @@ those folders. It talks over stdin and stdout and opens no network port.
 
 | Tool | What it does |
 | --- | --- |
-| `list_collections` | Collection ids, names, folders and trust status |
+| `list_collections` | Collection ids, names and folders |
 | `list_requests` | The request tree of a collection, optionally filtered by tag |
 | `show_request` | A request file's text and its parsed annotations |
 | `list_environments` | Environment names, the default, and variables with secrets masked |
@@ -65,8 +67,10 @@ bodies are truncated to keep results small.
 
 - The server is **read and run only**. It never creates or edits files,
   environments or the workspace.
-- It never grants trust. An untrusted collection returns an error asking you
-  to run `sankh trust <path>`; `--trust` and `SANKH_TRUST` do not apply.
+- Request files never execute anything: Sankh sends the request itself (see
+  [Secrets and safety](secrets-safety.md)).
+- `run` checks every selected file first. If one has an error, it returns the
+  errors with their line and column and sends nothing.
 - Secrets are masked in every result exactly as in `sankh run`.
 - `run` is marked as a tool with side effects, so clients ask before running
   requests.

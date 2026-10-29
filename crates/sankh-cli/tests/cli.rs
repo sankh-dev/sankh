@@ -9,12 +9,11 @@ fn example() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/petstore")
 }
 
-/// A `sankh` command isolated from the developer's trust store and env.
+/// A `sankh` command isolated from the developer's settings and env.
 fn sankh(config_dir: &Path) -> Command {
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("sankh");
     cmd.env("SANKH_CONFIG_DIR", config_dir)
         .env("SANKH_DATA_DIR", config_dir.join("data"))
-        .env_remove("SANKH_TRUST")
         .env_remove("TOKEN")
         .env("NO_COLOR", "1");
     cmd
@@ -32,15 +31,7 @@ fn petstore_flow_passes_and_reports() {
     let cfg = tempfile::tempdir().unwrap();
     let report = cfg.path().join("report.json");
     sankh(cfg.path())
-        .args([
-            "run",
-            "--env",
-            "ci",
-            "--trust",
-            "--report",
-            "json",
-            "--report-file",
-        ])
+        .args(["run", "--env", "ci", "--report", "json", "--report-file"])
         .arg(&report)
         .arg(example())
         .env("BASE_URL", &base)
@@ -59,7 +50,7 @@ fn petstore_flow_passes_and_reports() {
 }
 
 #[test]
-fn untrusted_folder_never_runs() {
+fn shell_lines_are_rejected_and_nothing_runs() {
     let cfg = tempfile::tempdir().unwrap();
     let col = tempfile::tempdir().unwrap();
     let marker = col.path().join("ran");
@@ -71,25 +62,88 @@ fn untrusted_folder_never_runs() {
             marker.display().to_string().replace('\\', "/")
         ),
     );
+    write(col.path(), "b.sh", "curl -sS http://127.0.0.1:9/ | sh\n");
+    sankh(cfg.path())
+        .arg("run")
+        .arg(col.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("expected a `curl` command"))
+        .stderr(predicate::str::contains("a.sh:1:1"))
+        .stderr(predicate::str::contains("shell syntax is not supported"))
+        .stderr(predicate::str::contains("b.sh:1:30"))
+        .stderr(predicate::str::contains("nothing was sent"));
+    assert!(!marker.exists());
+}
+
+#[test]
+fn check_reports_every_problem_without_sending() {
+    let server = httpmock::MockServer::start();
+    let hit = server.mock(|when, then| {
+        when.any_request();
+        then.status(200);
+    });
+    let cfg = tempfile::tempdir().unwrap();
+    let col = tempfile::tempdir().unwrap();
+    write(col.path(), "environments/dev.env", "");
+    write(
+        col.path(),
+        "01-login.sh",
+        "# @capture TOKEN=.token\ncurl -sS \"$BASE_URL/login\" --tlsv1.3\n",
+    );
+    write(
+        col.path(),
+        "02-me.sh",
+        "curl -sS \"$BASE_URL/me\" -H \"Authorization: Bearer $TOKEN\" -d @missing.json\n",
+    );
+    sankh(cfg.path())
+        .args(["run", "--check"])
+        .arg(col.path())
+        .env("BASE_URL", server.base_url())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "flag --tlsv1.3 is not supported yet",
+        ))
+        .stderr(predicate::str::contains("01-login.sh:2:28"))
+        .stderr(predicate::str::contains("missing.json"))
+        .stderr(predicate::str::contains("variable TOKEN").not());
+    hit.assert_calls(0);
+
+    write(
+        col.path(),
+        "01-login.sh",
+        "# @capture TOKEN=.token\ncurl -sS \"$BASE_URL/login\"\n",
+    );
+    write(col.path(), "missing.json", "{}");
+    sankh(cfg.path())
+        .args(["run", "--check"])
+        .arg(col.path())
+        .env("BASE_URL", server.base_url())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 requests checked, no errors"));
+    sankh(cfg.path())
+        .args(["run", "--check"])
+        .arg(col.path().join("02-me.sh"))
+        .env("BASE_URL", server.base_url())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("variable TOKEN is not defined"));
+    hit.assert_calls(0);
+}
+
+#[test]
+fn transport_errors_exit_3() {
+    let cfg = tempfile::tempdir().unwrap();
+    let col = tempfile::tempdir().unwrap();
+    write(col.path(), "a.sh", "curl -sS http://127.0.0.1:9/\n");
     sankh(cfg.path())
         .arg("run")
         .arg(col.path())
         .assert()
         .code(3)
-        .stderr(predicate::str::contains("is not trusted"));
-    assert!(!marker.exists());
-
-    sankh(cfg.path())
-        .arg("trust")
-        .arg(col.path())
-        .assert()
-        .success();
-    sankh(cfg.path())
-        .arg("run")
-        .arg(col.path())
-        .assert()
-        .code(1);
-    assert!(marker.exists());
+        .stdout(predicate::str::contains("could not connect to 127.0.0.1:9"));
 }
 
 #[test]
@@ -118,7 +172,7 @@ fn failing_assertion_exits_non_zero() {
         "# @expect status 200\n# @expect json .error == \"nope\"\ncurl -sS \"$BASE_URL/pets\"\n",
     );
     sankh(cfg.path())
-        .args(["run", "--trust"])
+        .arg("run")
         .arg(col.path())
         .env("BASE_URL", &base)
         .assert()
@@ -135,13 +189,7 @@ fn hostile_env_values_are_neither_broken_nor_injected() {
     let cfg = tempfile::tempdir().unwrap();
     let col = tempfile::tempdir().unwrap();
     let marker = col.path().join("pwned");
-    // Git for Windows' native curl decodes argv in the ANSI code page, so
-    // non-ASCII arguments cannot round-trip there.
-    let unicode = if cfg!(windows) {
-        ""
-    } else {
-        " ünïcødé 🐚"
-    };
+    let unicode = " ünïcødé 🐚";
     let hostile = format!(
         "a\"b 'c' $HOME `touch {m}` $(touch {m}) \\ ; | &{unicode}\nline2",
         m = marker.display()
@@ -152,7 +200,7 @@ fn hostile_env_values_are_neither_broken_nor_injected() {
         "# @expect json .body == \"$HOSTILE\"\n# @expect json .headers[\"x-val\"] == \"$HOSTILE_HEADER\"\ncurl -sS \"$BASE_URL/echo\" -H \"X-Val: $HOSTILE_HEADER\" -d \"$HOSTILE\"\n",
     );
     sankh(cfg.path())
-        .args(["run", "--trust"])
+        .arg("run")
         .arg(col.path())
         .env("BASE_URL", &base)
         .env("HOSTILE", &hostile)
@@ -167,7 +215,7 @@ fn filters_by_folder_and_tag() {
     let base = petstore::spawn();
     let cfg = tempfile::tempdir().unwrap();
     sankh(cfg.path())
-        .args(["run", "--trust", "--tag", "smoke"])
+        .args(["run", "--tag", "smoke"])
         .arg(example())
         .env("BASE_URL", &base)
         .env("PET_PASSWORD", petstore::PASSWORD)
@@ -175,7 +223,7 @@ fn filters_by_folder_and_tag() {
         .success()
         .stdout(predicate::str::contains("3 passed"));
     sankh(cfg.path())
-        .args(["run", "--trust", "--folder", "auth"])
+        .args(["run", "--folder", "auth"])
         .arg(example())
         .env("BASE_URL", &base)
         .env("PET_PASSWORD", petstore::PASSWORD)
@@ -209,7 +257,7 @@ fn httpmock_status_class_and_header_capture() {
         "# @expect json .ok == true\ncurl -sS \"$BASE_URL/b\" -H \"X-Trace: $TRACE\"\n",
     );
     sankh(cfg.path())
-        .args(["run", "--trust"])
+        .arg("run")
         .arg(col.path())
         .env("BASE_URL", server.base_url())
         .assert()
@@ -227,13 +275,14 @@ fn parse_errors_are_reported_with_line_numbers() {
         "# @name Bad\n# @expect json .a = 1\ncurl -sS http://127.0.0.1:9/\n",
     );
     sankh(cfg.path())
-        .args(["run", "--trust"])
+        .arg("run")
         .arg(col.path())
         .assert()
-        .code(1)
-        .stdout(predicate::str::contains(
-            "line 2: unknown operator `=`, did you mean `==`?",
-        ));
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error: unknown operator `=`, did you mean `==`?",
+        ))
+        .stderr(predicate::str::contains("bad.sh:2"));
 }
 
 fn postman_fixture(name: &str) -> PathBuf {
@@ -261,7 +310,7 @@ fn imported_postman_petstore_runs() {
         .stdout(predicate::str::contains("PET_PASSWORD"));
 
     sankh(cfg.path())
-        .args(["run", "--trust"])
+        .arg("run")
         .arg(&col)
         .env("BASE_URL", &base)
         .env("PET_PASSWORD", petstore::PASSWORD)
@@ -312,7 +361,7 @@ fn imported_postman_requests_send_the_same_bytes() {
         .stdout(predicate::str::contains("\"requests\": 9"));
 
     sankh(cfg.path())
-        .args(["run", "--trust"])
+        .arg("run")
         .arg(col.join("01-forms-files/02-login-form.sh"))
         .env("BASE_URL", server.base_url())
         .env("BASIC_USER", "admin")
@@ -321,16 +370,14 @@ fn imported_postman_requests_send_the_same_bytes() {
         .success();
     token.assert();
 
-    if cfg!(not(windows)) {
-        sankh(cfg.path())
-            .args(["run", "--trust"])
-            .arg(col.join("02-quoting-it-s-5-quoted/01-echo-tricky-body.sh"))
-            .env("BASE_URL", server.base_url())
-            .env("USER_ID", "u-1")
-            .assert()
-            .success();
-        echo.assert();
-    }
+    sankh(cfg.path())
+        .arg("run")
+        .arg(col.join("02-quoting-it-s-5-quoted/01-echo-tricky-body.sh"))
+        .env("BASE_URL", server.base_url())
+        .env("USER_ID", "u-1")
+        .assert()
+        .success();
+    echo.assert();
 }
 
 #[test]
@@ -389,7 +436,7 @@ fn workspace_add_list_and_unlink() {
         .map(|r| r["id"].as_str().unwrap())
         .collect();
     assert_eq!(ids, ["scratch", "users-api", "payments"]);
-    assert_eq!(rows[1]["trust"], "untrusted");
+    assert_eq!(rows[1]["missing"], false);
 
     sankh(cfg.path())
         .args(["workspace", "remove", "scratch"])

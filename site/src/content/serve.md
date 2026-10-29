@@ -4,6 +4,7 @@
 
 ```
 sankh serve [PATH]... [--listen 127.0.0.1] [--port 4747] [--token T] [--allow-host H]...
+            [--allow-target T]... [--deny-target T]...
 ```
 
 Without a path, `sankh serve` opens your saved [workspace](workspaces.md),
@@ -82,7 +83,7 @@ highlighted.
 
 Run results in the UI show real values, including secrets, because the UI is
 yours and runs on your machine. `sankh run`, its reports and `sankh mcp`
-still mask them (see [Trust and secrets](trust-secrets.md)).
+still mask them (see [Secrets and safety](secrets-safety.md)).
 
 ## Security model
 
@@ -92,8 +93,15 @@ still mask them (see [Trust and secrets](trust-secrets.md)).
   printed URL carries the token in the fragment (`#token=...`), which never
   reaches server logs.
 - Cross-origin API calls are rejected; paths cannot leave the collection root.
-- Each collection keeps its own trust: an untrusted folder in the workspace
-  can be browsed and edited but never runs until you trust it.
+- Request files never execute anything; the server sends the request itself.
+- Before a run sends anything, every selected file is checked. If one has an
+  error, the run is blocked, each error is shown with its line and column, and
+  nothing is sent.
+- The server sends requests from its own machine, so anyone who can use the UI
+  can reach hosts on its network. When others can reach the server, limit
+  targets with `--allow-target` and `--deny-target` (host names, `*.suffix`,
+  IP addresses or CIDR ranges, repeatable; deny wins; checked on every
+  redirect). See [Secrets and safety](secrets-safety.md#sending-requests-from-a-shared-server).
 
 ## Remote use
 

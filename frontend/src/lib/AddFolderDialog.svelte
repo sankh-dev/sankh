@@ -83,7 +83,7 @@
 	<form class="dialog" onsubmit={submit} aria-label="Add folder">
 		<h3>Add a collection folder</h3>
 		<p class="muted">
-			Each folder keeps its own environments, captured values and trust.
+			Each folder keeps its own environments and captured values.
 			{#if !saved}This server was started with folder arguments, so the folder is added for this session only.{/if}
 		</p>
 		<div class="row">

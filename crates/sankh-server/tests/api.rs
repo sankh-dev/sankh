@@ -8,7 +8,7 @@ use tower::ServiceExt;
 
 static CONFIG: Once = Once::new();
 
-/// All tests share one isolated trust store, workspace file and data dir.
+/// All tests share one isolated workspace file and data dir.
 fn isolate_config() {
     CONFIG.call_once(|| {
         let dir = tempfile::tempdir().unwrap().keep();
@@ -395,7 +395,7 @@ async fn reads_writes_and_renders_requests() {
 }
 
 #[tokio::test]
-async fn untrusted_runs_are_refused_then_stream_after_trust() {
+async fn runs_stream_results_and_keep_captures_per_collection() {
     let server = httpmock::MockServer::start();
     server.mock(|when, then| {
         when.path("/login");
@@ -422,14 +422,6 @@ async fn untrusted_runs_are_refused_then_stream_after_trust() {
     let (s, ids) = state_of(&[&users, &payments], None);
     let (a, b) = (&ids[0], &ids[1]);
 
-    let (status, _, body) = run(&s, a, json!({ "path": "", "env": "dev" })).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["details"]["state"], "untrusted");
-
-    for cid in [a, b] {
-        let (status, _) = call(&s, "POST", &format!("/api/c/{cid}/trust"), &[], None).await;
-        assert_eq!(status, StatusCode::OK);
-    }
     let (status, events, _) = run(&s, a, json!({ "path": "", "env": "dev" })).await;
     assert_eq!(status, StatusCode::OK);
     let kinds: Vec<&str> = events.iter().map(|e| e["type"].as_str().unwrap()).collect();
@@ -453,8 +445,21 @@ async fn untrusted_runs_are_refused_then_stream_after_trust() {
     let (_, events, _) = run(&s, a, json!({ "path": "02-me.sh", "env": "dev" })).await;
     assert_eq!(events.last().unwrap()["summary"]["passed"], 1);
 
-    // ...but only within that collection.
+    // ...but only within that collection, where it is caught before sending.
     let (_, events, _) = run(&s, b, json!({ "path": "02-me.sh", "env": "dev" })).await;
+    let kinds: Vec<&str> = events.iter().map(|e| e["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["start", "result", "blocked", "done"]);
+    let rejected = &events[1]["result"];
+    assert_eq!(rejected["error_kind"], "config");
+    assert!(
+        rejected["error"]
+            .as_str()
+            .unwrap()
+            .contains("variable TOKEN is not defined"),
+        "{rejected}"
+    );
+    assert_eq!(rejected["diagnostics"][0]["line"], 2);
+    assert_eq!(rejected["diagnostics"][0]["column"], 51);
     assert_eq!(events.last().unwrap()["summary"]["passed"], 0);
     let (_, vars) = call(&s, "GET", &format!("/api/c/{b}/envs/dev"), &[], None).await;
     assert!(!serde_json::to_string(&vars).unwrap().contains("capture"));
@@ -486,7 +491,6 @@ async fn runs_can_be_cancelled_and_honour_timeouts() {
         ),
     ]);
     let (s, cid) = state(&dir, None);
-    call(&s, "POST", &format!("/api/c/{cid}/trust"), &[], None).await;
 
     let (status, started) = call(
         &s,
@@ -560,7 +564,6 @@ async fn adds_unlinks_and_copies_between_collections() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(added["added"][0]["id"], "payments");
-    assert_eq!(added["added"][0]["trust"]["state"], "untrusted");
 
     let (status, _) = call(
         &s,
@@ -629,7 +632,7 @@ async fn adds_unlinks_and_copies_between_collections() {
 }
 
 #[tokio::test]
-async fn scratch_is_built_in_trusted_and_cannot_be_unlinked() {
+async fn scratch_is_built_in_and_cannot_be_unlinked() {
     isolate_config();
     let registry = Registry::session(&[], true).unwrap();
     let s = Arc::new(AppState::new(registry, None, "127.0.0.1", vec![]));
@@ -638,7 +641,6 @@ async fn scratch_is_built_in_trusted_and_cannot_be_unlinked() {
     assert_eq!(scratch["id"], "scratch");
     assert_eq!(scratch["scratch"], true);
     assert_eq!(scratch["name"], "Scratch");
-    assert_eq!(scratch["trust"]["state"], "trusted");
     assert_eq!(scratch["default_env"], "default");
 
     let (status, _) = call(&s, "DELETE", "/api/collections/scratch", &[], None).await;
@@ -941,6 +943,7 @@ fn remote_listen_requires_token() {
             port: 0,
             token: None,
             allow_hosts: vec![],
+            target_policy: None,
         }))
         .unwrap_err();
     assert!(err.to_string().contains("--token"));

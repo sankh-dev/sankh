@@ -7,7 +7,7 @@ Sankh comes in two parts that you can install separately:
 - **The desktop app**: the same UI in a native window. It does not include
   the `sankh` command.
 
-Both read and write the same collections, workspace and trust store, so you
+Both read and write the same collections and workspace, so you
 can install either or both.
 
 | OS | CLI | Desktop app |
@@ -22,16 +22,9 @@ Anything else can [build from source](#build-from-source).
 
 ## Requirements
 
-Request files run with `curl` and a POSIX shell:
-
-- **macOS:** nothing to add; `curl` and `sh` ship with the system.
-- **Linux:** install `curl` if your distribution leaves it out
-  (`sudo apt install curl`, `sudo dnf install curl`, `sudo apk add curl`).
-  Many request files also use `jq`.
-- **Windows:** install [Git for Windows](https://git-scm.com/download/win)
-  for its POSIX shell, and run the CLI from Git Bash. Or use
-  [WSL](#windows-subsystem-for-linux) and follow the Linux steps. When
-  `curl` is not installed, the Windows build uses a bundled curl.
+None. Sankh sends requests with its own HTTP client, so it needs neither
+`curl` nor a shell, on any OS. It verifies TLS certificates against the
+system's trusted roots.
 
 ## CLI
 
@@ -84,15 +77,16 @@ The installer puts `sankh.exe` in `%USERPROFILE%\.local\bin` (or
 terminal afterwards. For a specific version, replace `latest/download` with
 `download/v0.10.1`.
 
-Then run `sankh` from Git Bash, which is where request files get their shell:
+Then, in PowerShell, Command Prompt or any other terminal:
 
-```bash
+```powershell
 sankh --version
 ```
 
 ### Windows Subsystem for Linux
 
-Inside a WSL distribution (Ubuntu, Debian, ...), use the Linux install script.
+The Windows build works on its own, but you can also install the Linux build
+inside a WSL distribution (Ubuntu, Debian, ...) with the Linux install script.
 `sankh serve` started in WSL is reachable from the Windows browser at
 `http://localhost:4747`.
 
@@ -161,11 +155,6 @@ Download [Sankh-windows-setup.exe](https://github.com/sankh-dev/sankh/releases/l
 [Sankh-windows-x64.msi](https://github.com/sankh-dev/sankh/releases/latest/download/Sankh-windows-x64.msi)
 (for managed or machine-wide installs) and run it. In the SmartScreen prompt
 choose **More info**, then **Run anyway**.
-
-The app needs [Git for Windows](https://git-scm.com/download/win) for a POSIX
-shell. It finds a standard Git install even when Git Bash is not on `PATH`.
-When `curl` is not installed, the app uses a bundled curl. Requests run in
-the background and do not open a terminal.
 
 ### Debian, Ubuntu, Linux Mint, Pop!_OS
 
@@ -284,7 +273,7 @@ On macOS without Homebrew, drag **Sankh** from **Applications** to the Trash.
 On Windows, use **Settings > Apps**. An AppImage is just the file.
 
 Uninstalling leaves your collections alone. Sankh's own settings (the saved
-workspace, trust store and Scratch) are shared by the CLI and the app and
+workspace and Scratch) are shared by the CLI and the app and
 stay too; delete them by hand if you want a clean slate:
 
 | OS | Settings and Scratch |

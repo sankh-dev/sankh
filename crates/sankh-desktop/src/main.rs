@@ -1,10 +1,9 @@
 //! The Sankh desktop app: runs the `sankh serve` server in-process on a random
 //! loopback port, guarded by a per-launch token, and shows its UI in a native
-//! window. Requests still execute in Rust on this machine, as with the CLI.
+//! window. Requests are sent from this machine by Sankh's HTTP client, as with
+//! the CLI.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-mod env_path;
 
 use anyhow::{Context, Result};
 use sankh_server::{AppState, Registry, serve_on};
@@ -16,8 +15,6 @@ use tokio::net::TcpListener;
 const LISTEN: &str = "127.0.0.1";
 
 fn main() {
-    env_path::fix();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {

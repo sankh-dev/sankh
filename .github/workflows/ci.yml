@@ -48,10 +48,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        # Request files need a POSIX shell; on Windows that is Git Bash.
-        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -87,12 +83,25 @@ jobs:
       - run: cargo clippy -p sankh-desktop --all-targets -- -D warnings
       - run: cargo build -p sankh-desktop
 
+  parity:
+    # Sends the same commands with Sankh and with curl and compares what the
+    # server received (crates/sankh-core/tests/parity.rs).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: curl --version
+      - run: cargo test -p sankh-core --test parity
+        env:
+          SANKH_CURL_PARITY: "1"
+
   alpine:
-    # Portability: busybox `sh` instead of bash/dash.
+    # musl, and busybox `sh` as the tokenizer's reference shell.
     runs-on: ubuntu-latest
     container: rust:alpine
     steps:
-      - run: apk add --no-cache curl musl-dev git
+      - run: apk add --no-cache musl-dev git
       - uses: actions/checkout@v7
       - run: cargo test
 

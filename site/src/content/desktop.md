@@ -51,16 +51,12 @@ CI.
 
 ## Requirements
 
-Like the CLI, the app runs request files with a POSIX shell. On Windows that
-means [Git for Windows](https://git-scm.com/download/win): the app finds a
-standard Git install even when Git Bash is not on `PATH`. When `curl` is not
-installed, the app uses a bundled curl. Requests run in the background and
-do not open a terminal.
+None. Like the CLI, the app sends requests with its own HTTP client; it needs
+neither `curl` nor a shell.
 
-Apps started from a launcher, Finder or the Start menu do not inherit your
-terminal's `PATH`. On macOS and Linux the app reads `PATH` from your login
-shell at startup, so tools your request files call (for example `jq`) are
-found as they are in a terminal.
+Apps started from a launcher, Finder or the Start menu do not see variables
+set in your shell profile, such as `HTTPS_PROXY` or secrets exported there.
+Put request variables in the collection's `.env.local` instead.
 
 ## What is different from `sankh serve`
 

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CollectionSection from './lib/CollectionSection.svelte';
-	import TrustBanner from './lib/TrustBanner.svelte';
 	import RequestEditor from './lib/RequestEditor.svelte';
 	import ResponsePane from './lib/ResponsePane.svelte';
 	import RunPanel from './lib/RunPanel.svelte';
@@ -96,6 +95,11 @@
 		return out;
 	});
 	let shownResult = $derived(selected ? (results[key(selected)] ?? null) : null);
+	let runInsecure = $derived(
+		runState !== null &&
+			runState.collection === selected?.cid &&
+			Object.values(runState.results).some((r) => r.insecure)
+	);
 	let copyTargets = $derived(collections.filter((c) => !c.missing && c.id !== docRef?.cid));
 	let statusFns = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, statusFrom(v)])));
 	let infoFns = $derived(Object.fromEntries(Object.entries(envVars).map(([cid, v]) => [cid, infoFrom(v)])));
@@ -125,10 +129,6 @@
 		},
 		{ label: 'Delete file', icon: 'trash', danger: true, onselect: remove }
 	]);
-
-	function isTrusted(cid: string) {
-		return byId[cid]?.trust?.state === 'trusted';
-	}
 
 	function fail(e: unknown) {
 		if (e instanceof ApiError && e.status === 401) {
@@ -288,12 +288,21 @@
 	}
 
 	async function runPath(cid: string, path: string) {
-		if (!isTrusted(cid) || running !== null) return;
+		if (running !== null || !byId[cid] || byId[cid].missing) return;
 		error = null;
 		const isFile = path.endsWith('.sh');
 		runState = isFile
 			? null
-			: { collection: cid, target: path, paths: [], results: {}, current: null, summary: null, skipped: [] };
+			: {
+					collection: cid,
+					target: path,
+					paths: [],
+					results: {},
+					current: null,
+					summary: null,
+					skipped: [],
+					blocked: false
+				};
 		running = { cid, path };
 		try {
 			await run(
@@ -311,6 +320,9 @@
 						if (isFile) selected = { cid, path: ev.result.path };
 					} else if (ev.type === 'cancelled' && runState) {
 						runState.skipped = ev.skipped;
+					} else if (ev.type === 'blocked' && runState) {
+						runState.skipped = ev.skipped;
+						runState.blocked = true;
 					} else if (ev.type === 'done' && runState) {
 						runState.summary = ev.summary;
 						runState.current = null;
@@ -320,9 +332,9 @@
 			);
 			await loadVars(cid);
 		} catch (e) {
-			if (e instanceof ApiError && e.status === 403) info = await api.info();
 			fail(e);
 		} finally {
+			if (runState && !runState.summary) runState.current = null;
 			running = null;
 			runId = null;
 			stopping = false;
@@ -336,15 +348,6 @@
 			await api.cancelRun(runId);
 		} catch (e) {
 			stopping = false;
-			fail(e);
-		}
-	}
-
-	async function trust(cid: string) {
-		try {
-			await api.trust(cid);
-			info = await api.info();
-		} catch (e) {
 			fail(e);
 		}
 	}
@@ -515,9 +518,6 @@
 		/>
 	</header>
 
-	{#if active && active.trust && !active.missing}
-		<TrustBanner name={active.name} trust={active.trust} root={active.root} ontrust={() => trust(active!.id)} />
-	{/if}
 	{#if error}
 		<div class="error-bar" role="alert">
 			<Icon name="alert" />
@@ -615,7 +615,6 @@
 						onsetvar={(name, anchor) => openSetVar(cid, name, anchor)}
 						onsave={save}
 						onrun={() => runPath(cid, doc!.path)}
-						canRun={isTrusted(cid)}
 						running={running !== null}
 						{stopping}
 						onstop={runId ? stopRun : undefined}
@@ -653,7 +652,10 @@
 					onstop={runId && !runState.summary ? stopRun : undefined}
 				/>
 			{/if}
-			<ResponsePane result={shownResult} onadd={doc ? (k, l) => editor?.addAnnotation(k, l) : undefined} />
+			<ResponsePane
+				result={shownResult}
+				{runInsecure}
+				onadd={doc ? (k, l) => editor?.addAnnotation(k, l) : undefined} />
 		</section>
 	</main>
 </div>

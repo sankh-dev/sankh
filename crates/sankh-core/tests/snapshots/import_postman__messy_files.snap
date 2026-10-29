@@ -5,14 +5,14 @@ expression: tree(&out)
 === 01-forms-files/01-upload-avatar.sh
 #!/usr/bin/env bash
 # @name Upload avatar
-curl -sS -X POST "${BASE_URL}/avatar" \
+curl -sS "${BASE_URL}/avatar" \
   --form-string 'name=@not-a-file;type=text/plain' \
   -F avatar=@/Users/me/Pictures/cat.png
 
 === 01-forms-files/02-login-form.sh
 #!/usr/bin/env bash
 # @name Login form
-curl -sS -u "${BASIC_USER}:${BASIC_PASSWORD}" -X POST "${BASE_URL}/oauth/token" \
+curl -sS -u "${BASIC_USER}:${BASIC_PASSWORD}" "${BASE_URL}/oauth/token" \
   --data-urlencode grant_type=password \
   --data-urlencode 'scope=read write'
 

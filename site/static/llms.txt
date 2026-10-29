@@ -4,7 +4,9 @@
 > `.sh` files, each holding one `curl` command with comment annotations for
 > assertions and chaining. One binary runs them in CI (`sankh run`), serves a
 > local web UI (`sankh serve`), or exposes them to AI agents over MCP
-> (`sankh mcp`). Requests run on the machine, never in a browser.
+> (`sankh mcp`). Sankh reads each curl command and sends the request with its
+> own HTTP client; it never runs a shell or `curl`, so request files cannot
+> execute anything.
 
 Docs: https://sankh.dev/docs
 Source: https://github.com/sankh-dev/sankh
@@ -12,10 +14,8 @@ Full format reference: https://sankh.dev/docs/format
 
 ## Rules for agents
 
-- Request files are shell scripts. Never run a collection the user has not
-  trusted. If a run fails with "not trusted" (exit code 3), ask the user to
-  review the files and run `sankh trust <path>` themselves. Do not pass
-  `--trust` or set `SANKH_TRUST=1` outside CI.
+- After writing or editing request files, run `sankh run PATH --check --env
+  ENV`: it reports every problem (line and column) without sending anything.
 - Never write secrets into `environments/*.env` (committed). Secrets go in
   `.env.local` (gitignored) or the process environment.
 - Variables whose names contain TOKEN, SECRET, KEY, PASSWORD, PASSWD, AUTH or
@@ -26,7 +26,7 @@ Full format reference: https://sankh.dev/docs/format
 
 ```
 my-api/
-  sankh.toml            # optional: name, default_env, timeout, [order]
+  sankh.toml            # optional: name, default_env, timeout, max_body, env_proxy, [order]
   .env.example          # documents required variables, no values
   .env.local            # gitignored local values and secrets
   environments/
@@ -57,10 +57,17 @@ curl -sS -X POST "$BASE_URL/users" \
 
 - Annotations live in the contiguous `#` comment block at the top (after an
   optional shebang). A blank line ends the header.
-- Body: exactly one plain `curl` command is "form mode" (editable in the UI).
-  Pipes, `;`, redirection or several commands are "raw mode": still runs, the
-  last curl response is checked.
-- Every file still runs on its own: `set -a; . environments/dev.env; set +a; sh users/02-create.sh`
+- Body: exactly one `curl` command (line continuations and quotes allowed).
+  Pipes, `;`, `&&`, redirection, `$(...)` or several commands are errors.
+- Only supported curl flags are allowed; others are errors that name the flag
+  (no `-o`, `-w`, `-D`: use `@expect` and `@capture`). List:
+  https://sankh.dev/docs/curl-flags
+- Variables: `$VAR`, `${VAR}`, `${VAR:-default}`. Undefined is an error.
+  Values are never split or re-read.
+- Plain `-d` sends `application/x-www-form-urlencoded`, as curl does. For JSON
+  use `--json '{...}'` or add `-H 'Content-Type: application/json'`.
+- `@file` arguments are relative to the collection root and cannot leave it.
+- Every file is still a valid curl command: `set -a; . environments/dev.env; set +a; sh users/02-create.sh`
 
 ## Annotations
 
@@ -91,13 +98,16 @@ process environment, then values captured earlier in the run.
 
 ```bash
 sankh list PATH --json                                  # request tree as JSON
-sankh workspace list --json                             # saved collections + trust status
+sankh workspace list --json                             # saved collections
+sankh run PATH --check --env dev                        # validate files, send nothing
 sankh run PATH --env dev --report json --report-file -  # JSON report on stdout, human output on stderr
 sankh run PATH --tag smoke --folder users --bail        # filters; --bail stops at first failure
 ```
 
-Exit codes for `sankh run`: 0 all passed, 1 assertion/capture/request failed,
-2 usage or configuration error, 3 collection not trusted.
+Exit codes for `sankh run`: 0 all passed; 1 an `@expect` or `@capture`
+failed; 2 a file has an error (unsupported flag, shell syntax, undefined
+variable, missing file) or a usage error, and nothing was sent; 3 a request
+could not be sent (DNS, connection, TLS, timeout).
 
 JSON report shape:
 
@@ -107,8 +117,9 @@ JSON report shape:
   "summary": { "total": 2, "passed": 1, "failed": 1, "errors": 0, "duration_ms": 41.2 },
   "results": [
     {
-      "path": "pets/02-create.sh", "name": "Create pet", "outcome": "failed",
-      "response": { "status": 400, "time_ms": 3.1, "headers": [["content-type", "application/json"]], "body": "..." },
+      "path": "pets/02-create.sh", "name": "Create pet", "outcome": "failed", "error_kind": "assertion",
+      "request": { "method": "POST", "url": "http://localhost:4010/pets", "headers": [["Content-Type", "application/json"]], "body": "..." },
+      "response": { "status": 400, "version": "HTTP/1.1", "time_ms": 3.1, "headers": [["content-type", "application/json"]], "body": "..." },
       "assertions": [{ "label": "status 201", "passed": false, "message": "got 400" }],
       "captures": [], "error": null, "warnings": []
     }
@@ -118,8 +129,7 @@ JSON report shape:
 
 ## MCP server
 
-`sankh mcp` is a stdio MCP server (read and run only, it never edits files or
-grants trust). Add it to any MCP client:
+`sankh mcp` is a stdio MCP server (read and run only, it never edits files). Add it to any MCP client:
 
 ```json
 { "mcpServers": { "sankh": { "command": "sankh", "args": ["mcp"] } } }
@@ -130,11 +140,11 @@ plus Scratch; `sankh mcp PATH...` exposes only those folders.
 
 Tools:
 
-- `list_collections`: ids, names, roots, trust status.
+- `list_collections`: ids, names, roots.
 - `list_requests(collection, tags?)`: request tree.
 - `show_request(collection, path)`: file text and parsed annotations.
 - `list_environments(collection)`: environment names, default, variables (secrets masked).
-- `run(collection, path?, env?, folders?, tags?, bail?)`: runs requests and returns the JSON report. Refuses untrusted collections.
+- `run(collection, path?, env?, folders?, tags?, bail?)`: checks the selected files, then runs them and returns the JSON report. If a file has an error, nothing is sent and the errors are returned.
 
 ## Docs
 
@@ -142,5 +152,6 @@ Tools:
 - [Collection format](https://sankh.dev/docs/format)
 - [Assertions and chaining](https://sankh.dev/docs/assertions)
 - [Running in CI](https://sankh.dev/docs/ci)
-- [Trust and secrets](https://sankh.dev/docs/trust-secrets)
+- [curl flags](https://sankh.dev/docs/curl-flags)
+- [Secrets and safety](https://sankh.dev/docs/secrets-safety)
 - [AI agents and MCP](https://sankh.dev/docs/ai-agents)

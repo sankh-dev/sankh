@@ -21,6 +21,11 @@ export const docPages: DocPage[] = [
 		description: 'Folder layout, request files, annotations, and environments.'
 	},
 	{
+		slug: 'curl-flags',
+		title: 'curl flags',
+		description: 'Which curl options Sankh understands, ignores or rejects.'
+	},
+	{
 		slug: 'assertions',
 		title: 'Assertions and chaining',
 		description: 'Check responses, capture values, and chain requests into a flow.'
@@ -51,9 +56,9 @@ export const docPages: DocPage[] = [
 		description: 'Convert a Postman collection and its environments into a Sankh folder.'
 	},
 	{
-		slug: 'trust-secrets',
-		title: 'Trust and secrets',
-		description: 'How Sankh decides what may run and what gets redacted.'
+		slug: 'secrets-safety',
+		title: 'Secrets and safety',
+		description: 'What a request file can do, what gets redacted, and limiting where a shared server sends requests.'
 	},
 	{
 		slug: 'ai-agents',

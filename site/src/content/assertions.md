@@ -205,7 +205,7 @@ sankh · petstore · env dev (6 requests)
 ```
 
 `TOKEN` is shown as `***` because Sankh masks variables whose names look like
-secrets (see [Trust and secrets](trust-secrets.md)).
+secrets (see [Secrets and safety](secrets-safety.md)).
 
 ## Ordering and running part of a flow
 

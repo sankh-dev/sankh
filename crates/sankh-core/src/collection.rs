@@ -65,10 +65,49 @@ pub struct Config {
     /// Default per-request timeout in seconds (curl `--max-time`).
     #[serde(default)]
     pub timeout: Option<u64>,
+    /// Largest response body kept, as bytes or `"10MB"`, `"512KB"`.
+    #[serde(default)]
+    pub max_body: Option<Size>,
+    /// Use `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (default true).
+    #[serde(default)]
+    pub env_proxy: Option<bool>,
     /// Explicit ordering: folder path relative to the root (`""` for the root)
     /// mapped to entry names in the desired order. Unlisted entries follow.
     #[serde(default)]
     pub order: BTreeMap<String, Vec<String>>,
+}
+
+/// A byte count written as a number or with a `KB`, `MB` or `GB` suffix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Size {
+    Bytes(u64),
+    Text(String),
+}
+
+impl Size {
+    pub fn bytes(&self) -> Result<u64, String> {
+        let text = match self {
+            Size::Bytes(n) => return Ok(*n),
+            Size::Text(t) => t.trim(),
+        };
+        let upper = text.to_ascii_uppercase();
+        let (num, unit) = match upper.find(|c: char| !c.is_ascii_digit()) {
+            Some(i) => upper.split_at(i),
+            None => (upper.as_str(), ""),
+        };
+        let mult: u64 = match unit.trim() {
+            "" | "B" => 1,
+            "K" | "KB" => 1024,
+            "M" | "MB" => 1024 * 1024,
+            "G" | "GB" => 1024 * 1024 * 1024,
+            _ => return Err(format!("`{text}` is not a size (use e.g. 10MB)")),
+        };
+        num.parse::<u64>()
+            .ok()
+            .and_then(|n| n.checked_mul(mult))
+            .ok_or_else(|| format!("`{text}` is not a size (use e.g. 10MB)"))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -168,12 +207,16 @@ impl Collection {
             .canonicalize()
             .map_err(|_| CollectionError::NotFound(root.to_path_buf()))?;
         let config_path = root.join(CONFIG_FILE);
-        let config = if config_path.is_file() {
+        let config: Config = if config_path.is_file() {
             let text = std::fs::read_to_string(&config_path)?;
             toml::from_str(&text).map_err(|e| CollectionError::Config(e.to_string()))?
         } else {
             Config::default()
         };
+        if let Some(size) = &config.max_body {
+            size.bytes()
+                .map_err(|e| CollectionError::Config(format!("max_body: {e}")))?;
+        }
         Ok(Collection { root, config })
     }
 

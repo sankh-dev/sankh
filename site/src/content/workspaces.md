@@ -3,13 +3,13 @@
 A workspace is the set of collections the UI shows side by side, so you can
 work on a users API and a payments API at the same time without switching.
 Collections stay independent: each has its own environment picker, captured
-values, trust and runs.
+values and runs.
 
 ## The saved workspace
 
 ```bash
 sankh workspace add ~/work/users-api ~/work/payments-api
-sankh workspace list            # with trust status; --json for scripts
+sankh workspace list            # --json for scripts
 sankh workspace remove users-api   # by id or path (alias: unlink)
 sankh serve                     # opens the saved workspace
 ```
@@ -37,7 +37,6 @@ so.
 requests without an existing folder:
 
 - It lives in `~/.local/share/sankh/scratch` (or `$SANKH_DATA_DIR/scratch`).
-- It is trusted automatically, because only you write to it.
 - It cannot be unlinked.
 
 When a request is worth keeping, use **Copy to collection…** in the editor's **⋯** menu to copy it
@@ -48,8 +47,6 @@ into a real collection. Existing files are never overwritten.
 - A missing folder stays in the list, marked missing, until you unlink it, so
   an unmounted drive does not silently drop it from your workspace.
 - Collections cannot be nested inside each other.
-- Each collection is trusted on its own; see
-  [Trust and secrets](trust-secrets.md).
 
 ## A folder of collections
 

@@ -2,7 +2,7 @@
 //!
 //! The saved list lives at `~/.config/sankh/workspace.toml` (or
 //! `$SANKH_CONFIG_DIR`). Collections never share variables or captures; each
-//! keeps its own environments and trust. The built-in Scratch collection is
+//! keeps its own environments. The built-in Scratch collection is
 //! always present and is never written to the file.
 
 use crate::collection::{Collection, CollectionError};

@@ -8,13 +8,13 @@ macOS and Linux:
 curl -fsSL https://sankh.dev/install.sh | sh     # or: brew install sankh-dev/tap/sankh
 ```
 
-Windows (PowerShell), then use `sankh` from Git Bash:
+Windows (PowerShell):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/sankh-dev/sankh/releases/latest/download/sankh-installer.ps1 | iex"
 ```
 
-Sankh needs a POSIX shell at run time. On Windows use Git Bash or WSL. When `curl` is not installed there, the Windows build uses a bundled curl.
+Sankh needs nothing else at run time: no shell and no `curl`.
 
 Prefer a native window? The [desktop app](desktop.md) is the same UI as
 `sankh serve`, for macOS, Windows and Linux. [Install](install.md) has every
@@ -26,7 +26,7 @@ uninstalling.
 
 ```bash
 sankh init my-api              # scaffold a collection
-sankh trust my-api             # request files are scripts: trust before running
+sankh run my-api --check       # check every file without sending anything
 sankh run my-api --env dev     # run everything, exit non-zero on failure
 sankh serve my-api             # web UI on http://localhost:4747
 sankh workspace add my-api     # or keep it, so plain `sankh serve` opens it
@@ -70,16 +70,16 @@ The repository ships a petstore collection and an in-memory mock server:
 ```bash
 cargo run --example petstore_mock &        # http://localhost:4010
 cp examples/petstore/.env.example examples/petstore/.env.local
-sankh trust examples/petstore
 sankh run examples/petstore
 ```
 
 ## How it runs a file
 
-Sankh never modifies a request file. It sources the file in a shell (`bash` if
-the shebang names it, else `sh`) after defining a `curl` function that adds
-`-o`, `-D` and `-w '%{json}'` to record the body, headers and timing. If a
-raw-mode file calls curl several times, the last response is checked.
+Sankh never modifies or executes a request file. It reads the annotations and
+the curl command, expands `$VAR` from the environment, and sends the request
+with its own HTTP client. Every flag must be one it supports (see
+[curl flags](curl-flags.md)); anything it cannot honor, and any shell syntax
+such as a pipe, is an error that points at the line and column.
 
 ## Next steps
 
@@ -89,4 +89,5 @@ raw-mode file calls curl several times, the last response is checked.
 - [Desktop app](desktop.md): the same UI in a native window.
 - [Workspaces](workspaces.md): several collections side by side, and Scratch.
 - [Import from Postman](import.md): convert an existing collection.
-- [Trust and secrets](trust-secrets.md): what Sankh will run and what it hides.
+- [curl flags](curl-flags.md): which curl options Sankh understands.
+- [Secrets and safety](secrets-safety.md): what a request file can do and what Sankh hides.

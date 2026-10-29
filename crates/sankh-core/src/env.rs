@@ -78,14 +78,6 @@ impl Env {
             .or_else(|| self.file_vars.get(key))
     }
 
-    /// Variables referenced by `text` that are unset or empty in every layer.
-    pub fn missing(&self, text: &str) -> Vec<String> {
-        crate::shell::referenced_vars(text)
-            .into_iter()
-            .filter(|v| self.get(v).is_none_or(|s| s.is_empty()))
-            .collect()
-    }
-
     /// Whether `key` still needs a real value, before any request runs.
     /// `captured` lists names some request `@capture`s.
     pub fn status(&self, key: &str, captured: &BTreeSet<String>) -> VarStatus {
@@ -129,8 +121,8 @@ pub fn is_placeholder(value: &str) -> bool {
 /// The process environment, minus what an AppImage launcher injected.
 ///
 /// The desktop AppImage points `LD_LIBRARY_PATH`, `XDG_DATA_DIRS`, GTK
-/// variables and so on into its own mount. Request files run the system's
-/// `curl`, which breaks when it loads the AppImage's older libraries.
+/// variables and so on into its own mount; they mean nothing to a request
+/// and would only show up as stray variables.
 pub fn host_process_vars() -> Vars {
     let vars: Vars = std::env::vars().collect();
     match (vars.get("APPIMAGE"), vars.get("APPDIR")) {
@@ -687,7 +679,6 @@ mod tests {
         assert_eq!(r["B"], "local");
         assert_eq!(r["C"], "process");
         assert_eq!(r["D"], "cap");
-        assert_eq!(env.missing("$A $NOPE ${D}"), vec!["NOPE"]);
         assert!(matches!(
             Env::load(&c, Some("prod")),
             Err(EnvError::NotFound { .. })

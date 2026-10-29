@@ -11,8 +11,7 @@ import type {
 	RequestDoc,
 	RequestForm,
 	RunEvent,
-	TreeNode,
-	TrustStatus
+	TreeNode
 } from './types';
 
 const TOKEN_KEY = 'sankh-token';
@@ -85,7 +84,7 @@ export const api = {
 		call<DirListing>('GET', `/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ''}`),
 	render: (form: RequestForm) => call<{ content: string }>('POST', '/render', { form }),
 	importCurl: (curl: string, name: string) =>
-		call<{ content: string }>('POST', '/import', { curl, name }),
+		call<{ content: string; notes: string[] }>('POST', '/import', { curl, name }),
 	previewPostman: (body: PostmanImportRequest) =>
 		call<PostmanPreview>('POST', '/import/postman', { ...body, write: false }),
 	importPostman: (body: PostmanImportRequest) =>
@@ -127,7 +126,6 @@ export const api = {
 		}),
 	clearCaptures: (cid: string, env: string) =>
 		call<unknown>('DELETE', `${c(cid)}/captures?env=${encodeURIComponent(env || '_')}`),
-	trust: (cid: string) => call<TrustStatus>('POST', `${c(cid)}/trust`),
 	reveal: (cid: string) => call<{ opened: string }>('POST', `${c(cid)}/reveal`),
 	startRun: (cid: string, path: string, env: string) =>
 		call<{ id: string }>('POST', `${c(cid)}/run`, { path, env }),

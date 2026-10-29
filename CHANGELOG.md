@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Sankh sends requests itself.** It reads the curl command in each file and sends it with a built-in HTTP client. It no longer runs a shell or `curl`, so Sankh needs neither, and Windows works without Git Bash or WSL. Files keep the same format and are still valid curl commands.
+- **Errors point at the problem.** Unsupported flags, shell syntax (pipes, `$(...)`, `&&`), undefined variables and missing `@file`s are reported compiler style, with the file, line and column, and a hint. Supported, ignored and rejected flags are listed on the new [curl flags](https://sankh.dev/docs/curl-flags) page.
+- **Nothing is sent until every file checks out.** `sankh run`, the UI and the MCP `run` tool check the whole selection first; if any file has an error, they report all of them and send nothing.
+- **Exit codes:** 1 for a failed `@expect` or `@capture`, 2 for a file that cannot be read or built (and usage errors), 3 for a request that could not be sent (DNS, connection, TLS, timeout).
+- **Import keeps what Sankh supports.** Pasting a curl command keeps the supported flags and lists the ones it dropped (`-o`, `--tlsv1.2`, a trailing `| jq`).
+- **`@timeout`, `-m` and `timeout` in `sankh.toml`** now limit each attempt, redirects included. The default is 30 s.
+
+### Added
+
+- `sankh run --check` checks files without sending anything.
+- `max_body` (default 10 MB) and `env_proxy` (default `true`) in `sankh.toml`.
+- `sankh serve --allow-target` and `--deny-target` limit which hosts the server may send requests to, checked on every redirect.
+- Responses show the HTTP version, time to first byte, each redirect, and the request as sent. Binary bodies show their size and SHA-256.
+- `-k` prints a warning once per run and shows a banner in the UI.
+
+### Removed
+
+- **Trust.** Request files no longer execute anything, so `sankh trust`, `--trust`, `SANKH_TRUST`, the trust banner and `~/.config/sankh/trust.toml` are gone. Exit code 3 now means a transport error.
+- **Raw mode runs.** A file that is not one curl command (several commands, scripts, `curl` behind a pipe) is an error. The editor still opens it as text.
+- The bundled Windows curl and the Linux package dependency on `curl`.
+
 ## [0.10.1] - 2026-10-28
 
 ### Fixed

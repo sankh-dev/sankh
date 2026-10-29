@@ -9,7 +9,7 @@ cask "sankh-desktop" do
 
   url "https://github.com/sankh-dev/sankh/releases/download/v#{version}/Sankh_#{version}_#{arch}.dmg"
   name "Sankh"
-  desc "Lightweight request manager where each request is a curl script"
+  desc "Lightweight request manager where each request is a curl command"
   homepage "https://sankh.dev/"
 
   livecheck do
@@ -28,7 +28,7 @@ cask "sankh-desktop" do
         args: ["-dr", "com.apple.quarantine", "{{appdir}}/Sankh.app"]
   end
 
-  # The workspace, trust store and Scratch live in ~/Library/Application Support/sankh
+  # The workspace and Scratch live in ~/Library/Application Support/sankh
   # and are shared with the `sankh` CLI, so they are deliberately not removed.
   zap trash: [
     "~/Library/Application Support/dev.sankh.app",

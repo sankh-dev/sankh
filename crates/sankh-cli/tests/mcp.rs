@@ -32,7 +32,6 @@ impl Mcp {
             .args(paths)
             .env("SANKH_CONFIG_DIR", config_dir)
             .env("SANKH_DATA_DIR", config_dir.join("data"))
-            .env("SANKH_TRUST", "1")
             .env_remove("TOKEN")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -109,17 +108,6 @@ impl Drop for Mcp {
     }
 }
 
-fn trust(config_dir: &Path, path: &Path) {
-    let status = Command::new(sankh_bin())
-        .arg("trust")
-        .arg(path)
-        .env("SANKH_CONFIG_DIR", config_dir)
-        .stdout(Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
 /// The JSON report is the last text block of a `run` result.
 fn report(text: &str) -> Value {
     let start = text.find("\n{").expect("report JSON") + 1;
@@ -151,7 +139,7 @@ fn lists_tools_with_safety_annotations() {
 }
 
 #[test]
-fn untrusted_collection_never_runs_even_with_sankh_trust_env() {
+fn files_that_are_not_one_curl_command_never_run() {
     let cfg = tempfile::tempdir().unwrap();
     let col = tempfile::tempdir().unwrap();
     let marker = col.path().join("ran");
@@ -168,22 +156,20 @@ fn untrusted_collection_never_runs_even_with_sankh_trust_env() {
     let (_, listed) = mcp.call("list_collections", json!({}));
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let entry = &listed["collections"][0];
-    assert_eq!(entry["trust"]["state"], "untrusted", "{listed}");
+    assert!(entry.get("trust").is_none(), "{listed}");
     let id = entry["id"].as_str().unwrap().to_string();
 
-    let (is_error, text) = mcp.call("run", json!({ "collection": id }));
-    assert!(is_error, "{text}");
-    assert!(text.contains("is not trusted"), "{text}");
-    assert!(text.contains("sankh trust"), "{text}");
-    assert!(!text.contains("--trust"), "{text}");
-    assert!(!marker.exists(), "untrusted request ran");
+    let (_, text) = mcp.call("run", json!({ "collection": id }));
+    assert!(text.contains("Nothing was sent"), "{text}");
+    assert!(text.contains("expected a `curl` command"), "{text}");
+    assert_eq!(report(&text)["results"][0]["error_kind"], "parse");
+    assert!(!marker.exists(), "the shell line ran");
 }
 
 #[test]
 fn runs_petstore_with_redaction_and_rejects_escapes() {
     let base = petstore::spawn();
     let cfg = tempfile::tempdir().unwrap();
-    trust(cfg.path(), &example());
     let mut mcp = Mcp::start(
         cfg.path(),
         &[&example()],

@@ -125,7 +125,7 @@ pub fn render_curl(c: &CurlCommand) -> String {
         first.push_str(&quote(f));
     }
     let method = c.method.trim().to_ascii_uppercase();
-    let implied = if c.body.is_some() { "POST" } else { "GET" };
+    let implied = c.implied_method();
     if !method.is_empty() && method != implied {
         first.push_str(&format!(" -X {method}"));
     }
@@ -146,13 +146,24 @@ pub fn render_curl(c: &CurlCommand) -> String {
 }
 
 /// Builds a new request file from a pasted curl command.
-pub fn import_curl(cmd: &str, name: &str) -> Result<String, String> {
-    let curl = parser::parse_curl(cmd)?;
-    Ok(render(&RequestForm {
-        name: name.to_string(),
-        curl,
-        ..Default::default()
-    }))
+/// A pasted command as a request file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Imported {
+    pub content: String,
+    /// What was left out (unsupported flags, trailing shell syntax).
+    pub notes: Vec<String>,
+}
+
+pub fn import_curl(cmd: &str, name: &str) -> Result<Imported, String> {
+    let (curl, notes) = parser::parse_curl(cmd)?;
+    Ok(Imported {
+        content: render(&RequestForm {
+            name: name.to_string(),
+            curl,
+            ..Default::default()
+        }),
+        notes,
+    })
 }
 
 #[cfg(test)]
@@ -193,7 +204,7 @@ mod tests {
 
     #[test]
     fn form_fields_render_on_their_own_lines() {
-        let src = "#!/usr/bin/env bash\n# @name Upload\ncurl -sS -u \"$U:$P\" -X POST \"$BASE_URL/up\" \\\n  -H 'Accept: */*' \\\n  -F file=@./a.png \\\n  --form-string 'note=a;b'\n";
+        let src = "#!/usr/bin/env bash\n# @name Upload\ncurl -sS -u \"$U:$P\" \"$BASE_URL/up\" \\\n  -H 'Accept: */*' \\\n  -F file=@./a.png \\\n  --form-string 'note=a;b'\n";
         let req = parser::parse(src, "x.sh");
         assert_eq!(req.mode, Mode::Form, "{:?}", req.raw_reason);
         let form = RequestForm::from_request(&req).unwrap();
@@ -202,10 +213,22 @@ mod tests {
 
     #[test]
     fn imports_curl() {
-        let text = import_curl("curl https://x.dev/a -H 'Accept: */*'", "Get A").unwrap();
+        let imported = import_curl("curl https://x.dev/a -H 'Accept: */*'", "Get A").unwrap();
         assert_eq!(
-            text,
+            imported.content,
             "#!/usr/bin/env bash\n# @name Get A\ncurl -sS https://x.dev/a \\\n  -H 'Accept: */*'\n"
         );
+        assert!(imported.notes.is_empty());
+
+        let imported = import_curl(
+            "curl -sS --tlsv1.2 -o out.json https://x.dev/a | jq .",
+            "Get A",
+        )
+        .unwrap();
+        assert_eq!(
+            imported.content,
+            "#!/usr/bin/env bash\n# @name Get A\ncurl -sS https://x.dev/a\n"
+        );
+        assert_eq!(imported.notes.len(), 3, "{:?}", imported.notes);
     }
 }

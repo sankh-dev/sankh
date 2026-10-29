@@ -24,8 +24,6 @@
 		onsetvar: (name: string, anchor: DOMRect) => void;
 		onsave: (content: string) => Promise<RequestDoc>;
 		onrun: () => void;
-		/** False until the collection is trusted. */
-		canRun: boolean;
 		/** Some run is in progress (this request or another). */
 		running: boolean;
 		stopping: boolean;
@@ -45,7 +43,6 @@
 		onsetvar,
 		onsave,
 		onrun,
-		canRun,
 		running,
 		stopping,
 		onstop,
@@ -100,7 +97,7 @@
 			mode = 'form';
 			notice = null;
 		} else {
-			notice = `Can't show as form: ${parsed.request.raw_reason ?? 'unsupported syntax'}. The file still runs as-is.`;
+			notice = `Can't show as form: ${parsed.request.raw_reason ?? 'unsupported syntax'}. Fix it to run this request.`;
 		}
 	}
 
@@ -180,8 +177,8 @@
 			<button
 				class="run primary"
 				onclick={saveAndRun}
-				disabled={!canRun || running}
-				title={canRun ? 'Run (Ctrl+Enter)' : 'Trust this collection to run requests'}
+				disabled={running}
+				title="Run (Ctrl+Enter)"
 			>
 				<Icon name="play" size={11} />{running ? 'Running…' : 'Run'}
 			</button>
@@ -193,7 +190,7 @@
 	{#if notice}
 		<div class="notice">{notice}</div>
 	{:else if mode === 'raw' && rawReason}
-		<div class="notice muted">Raw mode: {rawReason}. The file runs as-is.</div>
+		<div class="notice">Can't show as form: {rawReason}. Fix it to run this request.</div>
 	{/if}
 
 	<div class="body">
@@ -233,8 +230,13 @@
 
 	{#if diagnostics.length}
 		<ul class="diagnostics">
-			{#each diagnostics as d (d.line + d.message)}
-				<li class={d.severity}>line {d.line}: {d.message}</li>
+			{#each diagnostics as d, i (i)}
+				<li class={d.severity}>
+					<span class="pos">{d.line ? `line ${d.line}${d.column ? `:${d.column}` : ''}` : 'file'}:</span>
+					{d.message}{#if d.label}<span class="label">: {d.label}</span>{/if}
+					{#if d.help}<div class="hint">help: {d.help}</div>{/if}
+					{#if d.note}<div class="hint">note: {d.note}</div>{/if}
+				</li>
 			{/each}
 		</ul>
 	{/if}
@@ -319,11 +321,6 @@
 		color: #f8e3a8;
 		font-size: 12px;
 	}
-	.notice.muted {
-		background: var(--panel-2);
-		border-bottom-color: var(--border);
-		color: var(--muted);
-	}
 	.body {
 		flex: 1;
 		min-height: 0;
@@ -348,5 +345,15 @@
 	}
 	.diagnostics .warning {
 		color: var(--warn);
+	}
+	.diagnostics .pos {
+		opacity: 0.8;
+	}
+	.diagnostics .label {
+		opacity: 0.85;
+	}
+	.diagnostics .hint {
+		padding-left: 2ch;
+		color: var(--muted);
 	}
 </style>

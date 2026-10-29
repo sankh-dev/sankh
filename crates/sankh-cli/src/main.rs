@@ -6,17 +6,17 @@ mod workspace;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use sankh_core::collection::{Collection, Node};
+use sankh_core::redact::Redactor;
 use sankh_core::report::{self, Summary};
+use sankh_core::request::Severity;
 use sankh_core::select::{self, Filters};
-use sankh_core::trust::{self, TrustError, TrustStatus, TrustStore};
-use sankh_core::{Env, RunContext, RunOptions, runner};
+use sankh_core::{Env, RunContext, RunOptions, diag, runner};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-/// Exit codes, documented in the README.
-const EXIT_FAILED: u8 = 1;
+/// Exit code for usage, parse and config errors; the others come from
+/// [`report::exit_code`] and are documented in the README.
 const EXIT_USAGE: u8 = 2;
-const EXIT_UNTRUSTED: u8 = 3;
 
 #[derive(Parser)]
 #[command(name = "sankh", version, about = "Blow the conch. Run your APIs.")]
@@ -39,17 +39,6 @@ enum Command {
         /// Print the tree as JSON
         #[arg(long)]
         json: bool,
-    },
-    /// Trust a folder so its request files may run
-    Trust {
-        #[arg(default_value = ".")]
-        path: PathBuf,
-        /// Remove trust instead
-        #[arg(long, conflicts_with = "list")]
-        revoke: bool,
-        /// Show all trusted folders
-        #[arg(long)]
-        list: bool,
     },
     /// Create a new collection skeleton
     Init {
@@ -88,9 +77,10 @@ struct RunArgs {
     /// Run every request (the default when no filters are given)
     #[arg(long)]
     all: bool,
-    /// Run without a trust entry (for CI)
-    #[arg(long, env = "SANKH_TRUST", value_parser = clap::builder::BoolishValueParser::new(), default_value_t = false)]
-    trust: bool,
+    /// Check every selected file (flags, variables, referenced files) and
+    /// send nothing
+    #[arg(long)]
+    check: bool,
     /// Write a machine-readable report
     #[arg(long, value_enum)]
     report: Option<ReportFormat>,
@@ -127,6 +117,13 @@ struct ServeArgs {
     /// Extra Host header values to accept (e.g. a reverse proxy hostname)
     #[arg(long = "allow-host")]
     allow_hosts: Vec<String>,
+    /// Only send requests to these hosts (repeatable): a name, `*.example.com`,
+    /// an IP address or a CIDR range such as `10.0.0.0/8`
+    #[arg(long = "allow-target")]
+    allow_targets: Vec<String>,
+    /// Never send requests to these hosts (repeatable; same forms as --allow-target)
+    #[arg(long = "deny-target")]
+    deny_targets: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -134,7 +131,6 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Run(args) => cmd_run(args),
         Command::List { path, tags, json } => cmd_list(path, tags, json),
-        Command::Trust { path, revoke, list } => cmd_trust(path, revoke, list),
         Command::Init { path } => init::run(&path).map(|_| ExitCode::SUCCESS),
         Command::Serve(args) => cmd_serve(args),
         Command::Import(source) => import::run(source).map(|_| ExitCode::SUCCESS),
@@ -144,10 +140,6 @@ fn main() -> ExitCode {
     match result {
         Ok(code) => code,
         Err(e) => {
-            if let Some(t) = e.downcast_ref::<TrustError>() {
-                eprintln!("{} {t}", output::red("error:"));
-                return ExitCode::from(EXIT_UNTRUSTED);
-            }
             eprintln!("{} {e:#}", output::red("error:"));
             ExitCode::from(EXIT_USAGE)
         }
@@ -173,7 +165,6 @@ fn cmd_run(args: RunArgs) -> Result<ExitCode> {
     }
     let collection = Collection::open(&roots[0])?;
     let target = args.path.canonicalize()?;
-    let trusted = trust::ensure(&collection, args.trust)?;
     let env = Env::load(&collection, args.env.as_deref())?;
     let filters = Filters {
         folders: args.folders,
@@ -182,6 +173,46 @@ fn cmd_run(args: RunArgs) -> Result<ExitCode> {
     let files = select::select(&collection, &target, &filters)?;
     if files.is_empty() {
         bail!("no requests matched");
+    }
+
+    let checks = runner::check(&collection, &files, &env);
+    let redactor = Redactor::from_vars(&env.resolved());
+    let mut errors = 0;
+    let mut bad_files = 0;
+    for c in &checks {
+        let shown: Vec<_> = c
+            .diagnostics
+            .iter()
+            .filter(|d| args.check || d.severity == Severity::Error)
+            .collect();
+        for d in &shown {
+            let text = diag::render(d, &c.path, &c.content, output::color_enabled());
+            eprintln!("{}", redactor.redact(&text));
+        }
+        let n = shown
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .count();
+        errors += n;
+        bad_files += usize::from(n > 0);
+    }
+    if errors > 0 {
+        eprintln!(
+            "{} {errors} error{} in {bad_files} file{}; nothing was sent",
+            output::red("error:"),
+            if errors == 1 { "" } else { "s" },
+            if bad_files == 1 { "" } else { "s" },
+        );
+        return Ok(ExitCode::from(EXIT_USAGE));
+    }
+    if args.check {
+        println!(
+            "{} {} request{} checked, no errors",
+            output::green("✓"),
+            files.len(),
+            if files.len() == 1 { "" } else { "s" }
+        );
+        return Ok(ExitCode::SUCCESS);
     }
 
     let report_to_stdout = args.report_file.as_deref() == Some(std::path::Path::new("-"));
@@ -197,7 +228,7 @@ fn cmd_run(args: RunArgs) -> Result<ExitCode> {
     let mut ctx = RunContext::new(env, RunOptions::for_collection(&collection));
     let mut results = Vec::new();
     for file in &files {
-        let result = runner::run_request(&trusted, &collection, file, &mut ctx);
+        let result = runner::run_request(&collection, file, &mut ctx);
         out.result(&result);
         let failed = result.outcome != sankh_core::Outcome::Passed;
         results.push(result);
@@ -224,11 +255,7 @@ fn cmd_run(args: RunArgs) -> Result<ExitCode> {
         }
     }
 
-    Ok(if summary.success() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(EXIT_FAILED)
-    })
+    Ok(ExitCode::from(report::exit_code(&results)))
 }
 
 fn cmd_list(path: PathBuf, tags: Vec<String>, json: bool) -> Result<ExitCode> {
@@ -274,51 +301,6 @@ fn cmd_list(path: PathBuf, tags: Vec<String>, json: bool) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn cmd_trust(path: PathBuf, revoke: bool, list: bool) -> Result<ExitCode> {
-    let mut store = TrustStore::load()?;
-    if list {
-        if store.folders.is_empty() {
-            println!("no trusted folders");
-        }
-        for (folder, entry) in &store.folders {
-            let head = entry
-                .head
-                .as_deref()
-                .map(|h| &h[..h.len().min(8)])
-                .unwrap_or("-");
-            println!("{folder}  {}", output::dim(&format!("(git {head})")));
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
-    let folder = path
-        .canonicalize()
-        .with_context(|| format!("{} not found", path.display()))?;
-    let folder = if folder.is_file() {
-        folder.parent().map(PathBuf::from).unwrap_or(folder)
-    } else {
-        folder
-    };
-    if revoke {
-        if store.revoke(&folder) {
-            store.save()?;
-            println!("revoked trust for {}", folder.display());
-        } else {
-            println!("{} was not trusted", folder.display());
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
-    if let TrustStatus::Trusted { path } = store.status(&folder) {
-        if path != folder.to_string_lossy() {
-            println!("already trusted via {path}");
-            return Ok(ExitCode::SUCCESS);
-        }
-    }
-    let key = store.trust(&folder)?;
-    store.save()?;
-    println!("{} trusted {key}", output::green("✓"));
-    Ok(ExitCode::SUCCESS)
-}
-
 fn cmd_serve(args: ServeArgs) -> Result<ExitCode> {
     let workspace = if args.paths.is_empty() {
         let saved = sankh_core::workspace::Workspace::load()?;
@@ -344,6 +326,10 @@ fn cmd_serve(args: ServeArgs) -> Result<ExitCode> {
         port: args.port,
         token: args.token.filter(|t| !t.is_empty()),
         allow_hosts: args.allow_hosts,
+        target_policy: Some(sankh_core::http::HostPolicy {
+            allow: args.allow_targets,
+            deny: args.deny_targets,
+        }),
     };
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(sankh_server::serve(config))?;

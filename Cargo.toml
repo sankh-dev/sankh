@@ -54,6 +54,15 @@ uuid = { version = "1", features = ["v4"] }
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 schemars = "1"
 base64 = "0.22"
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "gzip", "brotli", "deflate", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-native-certs = "0.8"
+webpki-roots = "1"
+url = "2"
+httpdate = "1"
+sha2 = "0.10"
+proptest = "1"
+rcgen = "0.14"
 
 insta = { version = "1", features = ["yaml"] }
 httpmock = "0.8"

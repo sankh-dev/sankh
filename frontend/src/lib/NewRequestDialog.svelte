@@ -15,6 +15,9 @@
 	let curl = $state('');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
+	/** The last import, shown for review when it left something out. */
+	let imported = $state.raw<{ curl: string; name: string; content: string; notes: string[] } | null>(null);
+	let notes = $derived(imported?.curl === curl && imported.name === name ? imported.notes : []);
 
 	let suggested = $derived(
 		name
@@ -33,7 +36,19 @@
 		try {
 			let file = (fileName.trim() || suggested).replace(/\.sh$/, '') + '.sh';
 			const path = folder ? `${folder}/${file}` : file;
-			const content = curl.trim() ? (await api.importCurl(curl, name)).content : TEMPLATE(name);
+			let content = TEMPLATE(name);
+			if (curl.trim()) {
+				if (notes.length) {
+					content = imported!.content;
+				} else {
+					const result = await api.importCurl(curl, name);
+					if (result.notes.length) {
+						imported = { curl, name, ...result };
+						return;
+					}
+					content = result.content;
+				}
+			}
 			await oncreate(path, content);
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
@@ -54,10 +69,20 @@
 			Import from curl (optional)
 			<textarea class="mono" rows="6" bind:value={curl} placeholder="curl 'https://api.example.com/users' -H 'Accept: application/json'"></textarea>
 		</label>
+		{#if notes.length}
+			<div class="notes" role="status">
+				<p>Left out of the imported request:</p>
+				<ul>
+					{#each notes as note, i (i)}
+						<li>{note}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 		{#if error}<p class="error">{error}</p>{/if}
 		<div class="buttons">
 			<button type="button" onclick={onclose}>Cancel</button>
-			<button type="submit" class="primary" disabled={busy}>Create</button>
+			<button type="submit" class="primary" disabled={busy}>{notes.length ? 'Create anyway' : 'Create'}</button>
 		</div>
 	</form>
 </div>
@@ -76,5 +101,20 @@
 	.error {
 		color: var(--fail);
 		margin: 0;
+	}
+	.notes {
+		padding: 6px 10px;
+		background: var(--warn-bg);
+		border: 1px solid var(--warn-border);
+		border-radius: var(--radius-sm);
+		color: #f8e3a8;
+		font-size: 12px;
+	}
+	.notes p {
+		margin: 0 0 2px;
+	}
+	.notes ul {
+		margin: 0;
+		padding-left: 18px;
 	}
 </style>

@@ -1,8 +1,6 @@
-//! Parses request files: the `#` header block with `@` annotations, and the
-//! single `curl` command that follows it.
+//! The `#` header block: `@` annotations.
 
 use crate::request::*;
-use crate::shell;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -64,66 +62,7 @@ pub fn strip_order_prefix(name: &str) -> &str {
     name
 }
 
-/// Parses a request file. Never fails: problems become diagnostics, and
-/// anything outside the strict format becomes raw mode.
-pub fn parse(content: &str, file_name: &str) -> Request {
-    let lines: Vec<&str> = content.lines().collect();
-    let mut req = Request {
-        name: String::new(),
-        description: None,
-        tags: Vec::new(),
-        timeout_ms: None,
-        expects: Vec::new(),
-        captures: Vec::new(),
-        mode: Mode::Form,
-        raw_reason: None,
-        curl: None,
-        extra_header_lines: Vec::new(),
-        shebang: None,
-        body: String::new(),
-        diagnostics: Vec::new(),
-    };
-
-    let mut i = 0;
-    if lines.first().is_some_and(|l| l.starts_with("#!")) {
-        req.shebang = Some(lines[0].to_string());
-        i = 1;
-    }
-    while i < lines.len() && lines[i].trim_start().starts_with('#') {
-        parse_header_line(&mut req, lines[i], i + 1);
-        i += 1;
-    }
-    let body_start = i;
-    req.body = lines[body_start..].join("\n");
-    if content.ends_with('\n') && !req.body.is_empty() {
-        req.body.push('\n');
-    }
-
-    for (offset, line) in lines[body_start..].iter().enumerate() {
-        if annotation_of(line).is_some() {
-            req.diagnostics.push(Diagnostic {
-                line: body_start + offset + 1,
-                severity: Severity::Warning,
-                message: "annotation after the request body is ignored".into(),
-            });
-        }
-    }
-
-    if req.name.is_empty() {
-        req.name = default_name(file_name);
-    }
-
-    match parse_body(&req.body) {
-        Ok(curl) => req.curl = Some(curl),
-        Err(reason) => {
-            req.mode = Mode::Raw;
-            req.raw_reason = Some(reason);
-        }
-    }
-    req
-}
-
-fn annotation_of(line: &str) -> Option<(&str, &str)> {
+pub(crate) fn annotation_of(line: &str) -> Option<(&str, &str)> {
     let rest = line.trim_start().strip_prefix('#')?.trim_start();
     let rest = rest.strip_prefix('@')?;
     let (name, args) = match rest.find(char::is_whitespace) {
@@ -140,17 +79,14 @@ fn annotation_of(line: &str) -> Option<(&str, &str)> {
     Some((name, args))
 }
 
-fn parse_header_line(req: &mut Request, line: &str, line_no: usize) {
+pub(crate) fn parse_header_line(req: &mut Request, line: &str, line_no: usize) {
     let Some((name, args)) = annotation_of(line) else {
         req.extra_header_lines.push(line.to_string());
         return;
     };
     let mut err = |msg: String| {
-        req.diagnostics.push(Diagnostic {
-            line: line_no,
-            severity: Severity::Error,
-            message: msg,
-        })
+        req.diagnostics
+            .push(Diagnostic::line(line_no, Severity::Error, msg))
     };
     match name {
         "name" => {
@@ -189,11 +125,11 @@ fn parse_header_line(req: &mut Request, line: &str, line_no: usize) {
             Ok(Some(e)) => req.expects.push(e),
             Ok(None) => {
                 req.extra_header_lines.push(line.to_string());
-                req.diagnostics.push(Diagnostic {
-                    line: line_no,
-                    severity: Severity::Warning,
-                    message: format!("`@expect {args}` is not supported in this version; ignored"),
-                });
+                req.diagnostics.push(Diagnostic::line(
+                    line_no,
+                    Severity::Warning,
+                    format!("`@expect {args}` is not supported in this version; ignored"),
+                ));
             }
             Err(m) => err(m),
         },
@@ -204,11 +140,8 @@ fn parse_header_line(req: &mut Request, line: &str, line_no: usize) {
             } else {
                 format!("unknown annotation `@{other}`; ignored")
             };
-            req.diagnostics.push(Diagnostic {
-                line: line_no,
-                severity: Severity::Warning,
-                message,
-            });
+            req.diagnostics
+                .push(Diagnostic::line(line_no, Severity::Warning, message));
         }
     }
 }
@@ -379,151 +312,9 @@ fn parse_json_expect(rest: &str) -> Result<Expect, String> {
     Err(USAGE.into())
 }
 
-/// Checks the request body is exactly one plain `curl` command and parses it.
-fn parse_body(body: &str) -> Result<CurlCommand, String> {
-    let joined = shell::join_continuations(body);
-    let cmd = joined.trim();
-    if cmd.is_empty() {
-        return Err("no curl command found".into());
-    }
-    if let Some(feature) = shell::find_shell_feature(cmd) {
-        return Err(format!("the body uses {feature}"));
-    }
-    parse_curl(cmd)
-}
-
-/// Parses a single `curl ...` command line (e.g. pasted from a browser).
-pub fn parse_curl(cmd: &str) -> Result<CurlCommand, String> {
-    let joined = shell::join_continuations(cmd);
-    let words = shell::split_words(joined.trim())?;
-    let mut it = words.into_iter();
-    match it.next().as_deref() {
-        Some("curl") => {}
-        _ => return Err("the body is not a curl command".into()),
-    }
-    let mut c = CurlCommand::default();
-    let mut explicit_method = None;
-    let next_val = |it: &mut std::vec::IntoIter<String>, flag: &str| {
-        it.next().ok_or_else(|| format!("`{flag}` needs a value"))
-    };
-    while let Some(w) = it.next() {
-        match w.as_str() {
-            "-X" | "--request" => explicit_method = Some(next_val(&mut it, &w)?),
-            "-H" | "--header" => {
-                let h = next_val(&mut it, &w)?;
-                let Some((name, value)) = h.split_once(':') else {
-                    return Err(format!("header `{h}` has no `:`"));
-                };
-                c.headers.push(Header {
-                    name: name.trim().to_string(),
-                    value: value.trim_start().to_string(),
-                });
-            }
-            "-d" | "--data" | "--data-raw" | "--data-binary" | "--data-ascii" | "--json" => {
-                if c.body.is_some() {
-                    return Err("more than one request body".into());
-                }
-                let v = next_val(&mut it, &w)?;
-                c.body = Some(v);
-                if w != "-d" && w != "--data" {
-                    c.body_flag = Some(w.clone());
-                }
-            }
-            "--url" => {
-                let v = next_val(&mut it, &w)?;
-                set_url(&mut c, v)?;
-            }
-            s if s.starts_with("-X") && s.len() > 2 && !s.starts_with("--") => {
-                explicit_method = Some(s[2..].to_string())
-            }
-            s if takes_value(s) => {
-                let v = next_val(&mut it, s)?;
-                c.flags.push(w.clone());
-                c.flags.push(v);
-            }
-            s if s.starts_with('-') && s.len() > 1 => c.flags.push(w.clone()),
-            _ => set_url(&mut c, w)?,
-        }
-    }
-    if c.url.is_empty() {
-        return Err("curl command has no URL".into());
-    }
-    c.method = explicit_method
-        .map(|m| m.to_ascii_uppercase())
-        .unwrap_or_else(|| if c.body.is_some() { "POST" } else { "GET" }.into());
-    Ok(c)
-}
-
-fn set_url(c: &mut CurlCommand, url: String) -> Result<(), String> {
-    if !c.url.is_empty() {
-        return Err("curl command has more than one URL".into());
-    }
-    c.url = url;
-    Ok(())
-}
-
-fn takes_value(flag: &str) -> bool {
-    matches!(
-        flag,
-        "-u" | "--user"
-            | "-A"
-            | "--user-agent"
-            | "-b"
-            | "--cookie"
-            | "-c"
-            | "--cookie-jar"
-            | "-e"
-            | "--referer"
-            | "-m"
-            | "--max-time"
-            | "--connect-timeout"
-            | "-x"
-            | "--proxy"
-            | "--cacert"
-            | "--cert"
-            | "--key"
-            | "-E"
-            | "-F"
-            | "--form"
-            | "--form-string"
-            | "--resolve"
-            | "--retry"
-            | "-w"
-            | "--write-out"
-            | "-o"
-            | "--output"
-            | "-D"
-            | "--dump-header"
-            | "-T"
-            | "--upload-file"
-            | "--data-urlencode"
-            | "--oauth2-bearer"
-            | "-r"
-            | "--range"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const SAMPLE: &str = r#"#!/usr/bin/env bash
-# @name Create user
-# @tags smoke users
-# @capture USER_ID=.data.id
-# @expect status 201
-# @expect json .data.name == "test"
-curl -sS -X POST "$BASE_URL/users" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"test"}'
-"#;
-
-    #[test]
-    fn parses_sample() {
-        let r = parse(SAMPLE, "02-create.sh");
-        insta::assert_yaml_snapshot!(r);
-    }
 
     #[test]
     fn default_names() {
@@ -614,40 +405,6 @@ curl -sS -X POST "$BASE_URL/users" \
     }
 
     #[test]
-    fn raw_mode_for_pipes() {
-        let r = parse("# @name x\ncurl -sS \"$U\" | jq .\n", "x.sh");
-        assert_eq!(r.mode, Mode::Raw);
-        assert!(r.raw_reason.unwrap().contains("pipe"));
-    }
-
-    #[test]
-    fn unknown_annotations_warn_and_are_preserved() {
-        let r = parse(
-            "# @retry 3 every 1s\n# @frobnicate\n# plain comment\ncurl x\n",
-            "x.sh",
-        );
-        assert_eq!(r.extra_header_lines.len(), 3);
-        assert!(
-            r.diagnostics
-                .iter()
-                .all(|d| d.severity == Severity::Warning)
-        );
-        assert_eq!(r.diagnostics.len(), 2);
-    }
-
-    #[test]
-    fn joins_description_lines() {
-        let r = parse(
-            "# @description Creates a user.\n# @description\n# @description Needs $TOKEN.\ncurl x\n",
-            "x.sh",
-        );
-        assert_eq!(
-            r.description.as_deref(),
-            Some("Creates a user.\n\nNeeds $TOKEN.")
-        );
-    }
-
-    #[test]
     fn parses_timeouts() {
         assert_eq!(parse_duration("500ms"), Ok(500));
         assert_eq!(parse_duration("10s"), Ok(10_000));
@@ -658,35 +415,5 @@ curl -sS -X POST "$BASE_URL/users" \
         assert_eq!(format_duration(120_000), "2m");
         assert_eq!(format_duration(10_000), "10s");
         assert_eq!(format_duration(1500), "1500ms");
-
-        let r = parse("# @timeout 3s\ncurl x\n", "x.sh");
-        assert_eq!(r.timeout_ms, Some(3000));
-        assert!(r.diagnostics.is_empty());
-        let r = parse("# @timeout forever\ncurl x\n", "x.sh");
-        assert!(r.has_errors());
-    }
-
-    #[test]
-    fn errors_for_malformed_known_annotations() {
-        let r = parse(
-            "# @capture token=.a\n# @expect status 999\ncurl x\n",
-            "x.sh",
-        );
-        assert_eq!(r.diagnostics.len(), 2);
-        assert!(r.has_errors());
-        assert_eq!(r.diagnostics[1].line, 2);
-    }
-
-    #[test]
-    fn parses_browser_curl() {
-        let c = parse_curl(
-            "curl 'https://api.example.com/x?a=1' \\\n  -H 'accept: application/json' \\\n  --data-raw '{\"a\":1}' --compressed",
-        )
-        .unwrap();
-        assert_eq!(c.method, "POST");
-        assert_eq!(c.url, "https://api.example.com/x?a=1");
-        assert_eq!(c.headers.len(), 1);
-        assert_eq!(c.body_flag.as_deref(), Some("--data-raw"));
-        assert_eq!(c.flags, vec!["--compressed"]);
     }
 }

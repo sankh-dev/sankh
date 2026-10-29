@@ -1,130 +1,7 @@
-//! Minimal shell lexing: enough to split a single `curl` command into words
-//! and to detect shell features that push a file into raw mode.
+//! Shell-style quoting for rendering request files, and `$VAR` helpers.
 //!
 //! Word values follow one convention used across Sankh: `$VAR` means "expand
 //! at run time", and a literal dollar sign is written `\$`.
-
-/// Joins backslash-newline continuations into single spaces.
-pub fn join_continuations(text: &str) -> String {
-    text.replace("\\\r\n", " ").replace("\\\n", " ")
-}
-
-/// Returns a description of the first shell feature that makes `cmd` more
-/// than a single plain command, if any.
-pub fn find_shell_feature(cmd: &str) -> Option<&'static str> {
-    #[derive(PartialEq)]
-    enum Q {
-        None,
-        Single,
-        Double,
-    }
-    let mut q = Q::None;
-    let chars: Vec<char> = cmd.chars().collect();
-    let mut i = 0;
-    let mut word_start = true;
-    while i < chars.len() {
-        let c = chars[i];
-        match q {
-            Q::Single => {
-                if c == '\'' {
-                    q = Q::None;
-                }
-            }
-            Q::Double => match c {
-                '\\' => i += 1,
-                '"' => q = Q::None,
-                '`' => return Some("command substitution"),
-                '$' if chars.get(i + 1) == Some(&'(') => return Some("command substitution"),
-                _ => {}
-            },
-            Q::None => match c {
-                '\\' => i += 1,
-                '\'' => q = Q::Single,
-                '"' => q = Q::Double,
-                '`' => return Some("command substitution"),
-                '$' if chars.get(i + 1) == Some(&'(') => return Some("command substitution"),
-                '$' if chars.get(i + 1) == Some(&'\'') => return Some("ANSI-C quoting"),
-                ';' => return Some("multiple commands (`;`)"),
-                '|' => return Some("a pipe"),
-                '&' => return Some("`&`"),
-                '<' | '>' => return Some("redirection"),
-                '\n' => return Some("multiple lines"),
-                '#' if word_start => return Some("an inline comment"),
-                _ => {}
-            },
-        }
-        word_start = q == Q::None && c.is_whitespace();
-        i += 1;
-    }
-    None
-}
-
-/// Splits a command line into words. Quotes are removed; see module docs for
-/// how dollar signs are represented.
-pub fn split_words(cmd: &str) -> Result<Vec<String>, String> {
-    let mut words = Vec::new();
-    let mut cur = String::new();
-    let mut in_word = false;
-    let mut chars = cmd.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            c if c.is_whitespace() => {
-                if in_word {
-                    words.push(std::mem::take(&mut cur));
-                    in_word = false;
-                }
-            }
-            '\'' => {
-                in_word = true;
-                loop {
-                    match chars.next() {
-                        Some('\'') => break,
-                        Some('$') => cur.push_str("\\$"),
-                        Some(ch) => cur.push(ch),
-                        None => return Err("unterminated single quote".into()),
-                    }
-                }
-            }
-            '"' => {
-                in_word = true;
-                loop {
-                    match chars.next() {
-                        Some('"') => break,
-                        Some('\\') => match chars.next() {
-                            Some('$') => cur.push_str("\\$"),
-                            Some(ch @ ('"' | '\\' | '`')) => cur.push(ch),
-                            Some('\n') => {}
-                            Some(ch) => {
-                                cur.push('\\');
-                                cur.push(ch);
-                            }
-                            None => return Err("unterminated double quote".into()),
-                        },
-                        Some(ch) => cur.push(ch),
-                        None => return Err("unterminated double quote".into()),
-                    }
-                }
-            }
-            '\\' => {
-                in_word = true;
-                match chars.next() {
-                    Some('$') => cur.push_str("\\$"),
-                    Some('\n') => {}
-                    Some(ch) => cur.push(ch),
-                    None => {}
-                }
-            }
-            c => {
-                in_word = true;
-                cur.push(c);
-            }
-        }
-    }
-    if in_word {
-        words.push(cur);
-    }
-    Ok(words)
-}
 
 /// Quotes a word so the shell reproduces it, expanding `$VAR` references.
 pub fn quote(word: &str) -> String {
@@ -256,24 +133,7 @@ pub fn expand(text: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn splits_quoted_words() {
-        let w = split_words(r#"curl -X POST "$BASE_URL/u" -H 'A: b c' -d '{"x":"$y"}'"#).unwrap();
-        assert_eq!(
-            w,
-            vec![
-                "curl",
-                "-X",
-                "POST",
-                "$BASE_URL/u",
-                "-H",
-                "A: b c",
-                "-d",
-                r#"{"x":"\$y"}"#
-            ]
-        );
-    }
+    use crate::parse::tokenize::tokenize;
 
     #[test]
     fn quote_round_trips() {
@@ -285,23 +145,13 @@ mod tests {
             "\\$lit",
             "x\"y`z",
             "plain",
+            "${A:-x}/b",
         ] {
             let quoted = quote(word);
-            let back = split_words(&quoted).unwrap();
-            assert_eq!(back, vec![word.to_string()], "quoted as {quoted}");
+            let words = tokenize(&quoted, 0).unwrap().words;
+            assert_eq!(words.len(), 1, "quoted as {quoted}");
+            assert_eq!(words[0].template(), word, "quoted as {quoted}");
         }
-    }
-
-    #[test]
-    fn detects_shell_features() {
-        assert_eq!(find_shell_feature("curl a | jq ."), Some("a pipe"));
-        assert_eq!(find_shell_feature("curl 'a|b'"), None);
-        assert_eq!(
-            find_shell_feature("curl \"$(cat x)\""),
-            Some("command substitution")
-        );
-        assert_eq!(find_shell_feature("curl a > out"), Some("redirection"));
-        assert_eq!(find_shell_feature("curl a#b"), None);
     }
 
     #[test]

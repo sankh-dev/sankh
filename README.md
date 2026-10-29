@@ -5,7 +5,11 @@
 Sankh is a very lightweight request manager. A collection is a plain folder of
 `.sh` files, each holding one `curl` command. One binary runs them in CI
 (`sankh run`) or serves a small web UI (`sankh serve`) where the server, not
-the browser, executes the requests.
+the browser, sends the requests.
+
+Sankh reads the curl command and sends it with its own HTTP client. It never
+runs a shell or `curl`, so a collection from someone else cannot execute
+anything, and it works the same on Linux, macOS and Windows.
 
 > Your API collection is a git repo that runs anywhere. The UI is optional.
 
@@ -22,7 +26,7 @@ curl -sS "$BASE_URL/pets" \
   -d '{"name":"Rex"}'
 ```
 
-Every file still runs on its own, with or without Sankh:
+Every file is still a curl command that runs on its own, with or without Sankh:
 
 ```bash
 set -a; . environments/dev.env; set +a
@@ -43,7 +47,7 @@ Or build from source (needs Rust and Node 22):
 cargo install --path crates/sankh-cli
 ```
 
-Sankh needs a POSIX shell at run time. On Windows use Git Bash or WSL. When `curl` is not installed there, the Windows build uses a bundled curl.
+Sankh has no run-time dependencies: no shell, no `curl`.
 
 ### Desktop app
 
@@ -55,14 +59,13 @@ opens your saved workspace, like `sankh serve`.
 
 The installers are not code signed yet. On macOS right-click the app and
 choose Open the first time (or `xattr -dr com.apple.quarantine
-/Applications/Sankh.app`); on Windows choose More info, then Run anyway. It
-still needs a POSIX shell (Git Bash on Windows). When `curl` is not installed, the app uses a bundled curl. Requests run in the background and do not open a terminal.
+/Applications/Sankh.app`); on Windows choose More info, then Run anyway.
 
 ## Quick start
 
 ```bash
 sankh init my-api              # scaffold a collection
-sankh trust my-api             # request files are scripts: trust before running
+sankh run my-api --check       # check every file without sending anything
 sankh run my-api --env dev     # run everything, exit non-zero on failure
 sankh serve my-api             # web UI on http://localhost:4747
 sankh workspace add my-api     # or keep it, so plain `sankh serve` opens it
@@ -73,7 +76,6 @@ Try the bundled example against an in-memory mock:
 ```bash
 cargo run --example petstore_mock &        # http://localhost:4010
 cp examples/petstore/.env.example examples/petstore/.env.local
-sankh trust examples/petstore
 sankh run examples/petstore
 ```
 
@@ -81,28 +83,33 @@ sankh run examples/petstore
 
 ```
 sankh run [PATH] [--env NAME] [--folder F]... [--tag T]... [--all]
-          [--trust] [--report junit|json] [--report-file PATH|-] [--bail] [-v]
+          [--check] [--report junit|json] [--report-file PATH|-] [--bail] [-v]
 ```
 
 - `PATH` is a request file or folder (default `.`). Folders run in order:
   numeric prefix (`01-`), then name; override with `[order]` in `sankh.toml`.
 - `--folder` and `--tag` are repeatable; a request matches if it is in **any**
   listed folder and has **any** listed tag.
-- `--trust` (or `SANKH_TRUST=1`) skips the trust check, for CI.
+- Before sending anything, every selected file is parsed and its variables and
+  `@file` paths are checked. If any file has an error, all of them are
+  reported, compiler style, and nothing is sent. `--check` stops there.
 - `--report-file -` writes the report to stdout and human output to stderr.
 
 | Exit code | Meaning |
 | --- | --- |
 | 0 | All requests passed |
-| 1 | An assertion failed, a capture failed, or a request errored |
-| 2 | Usage or configuration error |
-| 3 | The collection is not trusted |
+| 1 | An `@expect` or `@capture` failed |
+| 2 | A file could not be read or built: unsupported flag, shell syntax, undefined variable, missing `@file`, bad URL; or a usage error |
+| 3 | A request could not be sent: DNS, connection, TLS, timeout |
+
+When several kinds of failure happen in one run, the highest number wins
+in the order 2, 3, 1.
 
 ### CI
 
 ```yaml
 - run: curl -fsSL https://sankh.dev/install.sh | sh
-- run: sankh run . --env ci --folder smoke --trust --report junit
+- run: sankh run . --env ci --folder smoke --report junit
   env:
     TOKEN: ${{ secrets.API_TOKEN }}
 ```
@@ -111,6 +118,7 @@ sankh run [PATH] [--env NAME] [--folder F]... [--tag T]... [--all]
 
 ```
 sankh serve [PATH]... [--listen 127.0.0.1] [--port 4747] [--token T] [--allow-host H]...
+            [--allow-target T]... [--deny-target T]...
 ```
 
 Without a path, `sankh serve` opens your saved [workspace](#workspaces). With
@@ -132,17 +140,22 @@ Security:
 - Cross-origin API calls are rejected; paths cannot leave the collection root.
 - Prefer an SSH tunnel (`ssh -L 4747:localhost:4747 host`) or a TLS reverse
   proxy (`--allow-host api-tools.example.com`) for remote use.
+- Anyone who can use the UI can make the server send requests, including to
+  hosts on its own network. On a shared server, limit where requests may go
+  with `--allow-target` and `--deny-target` (host names, `*.suffix`, IP
+  addresses or CIDR ranges, repeatable; deny wins). They are checked again on
+  every redirect.
 
 ## Workspaces
 
 A workspace is the set of collections the UI shows side by side, so you can
 work on a users API and a payments API at the same time without switching.
 Collections stay independent: each has its own environment picker, captured
-values, trust and runs.
+values and runs.
 
 ```
 sankh workspace add PATH...          # keep folders in the workspace
-sankh workspace list [--json]        # show them, with trust status
+sankh workspace list [--json]        # show them
 sankh workspace remove ID|PATH       # unlink (alias: unlink); files stay on disk
 ```
 
@@ -153,8 +166,8 @@ sankh workspace remove ID|PATH       # unlink (alias: unlink); files stay on dis
   in the UI are not saved.
 - **Scratch** is a built-in collection that is always listed first, for
   trying requests without an existing folder. It lives in
-  `~/.local/share/sankh/scratch` (or `$SANKH_DATA_DIR/scratch`), is trusted
-  automatically and cannot be unlinked. Use **Copy to collection…** in the editor's **⋯** menu to move
+  `~/.local/share/sankh/scratch` (or `$SANKH_DATA_DIR/scratch`) and cannot
+  be unlinked. Use **Copy to collection…** in the editor's **⋯** menu to move
   a request from Scratch into a real collection; existing files are never
   overwritten.
 - A missing folder stays in the list, marked missing, until you unlink it.
@@ -192,7 +205,7 @@ Agents with a shell can use `sankh list --json` and
 `sankh run --report json --report-file -` directly. Point them at
 [sankh.dev/llms.txt](https://sankh.dev/llms.txt) or copy
 [`skills/sankh`](skills/sankh/SKILL.md) into `.cursor/skills/` or
-`.claude/skills/` to teach them the format and the trust rules.
+`.claude/skills/` to teach them the format.
 
 Any MCP client can use the built-in stdio server:
 
@@ -206,15 +219,15 @@ sankh mcp [PATH]...
 
 Without a path it exposes the saved workspace plus Scratch; with paths, only
 those folders. Tools: `list_collections`, `list_requests`, `show_request`,
-`list_environments` and `run`. It is read and run only: it never edits files
-and never grants trust, so an untrusted collection is refused until you run
-`sankh trust`. Secrets are masked as in `sankh run`.
+`list_environments` and `run`. It is read and run only: it never edits files.
+Like `sankh run`, it checks every selected file first and sends nothing if one
+has an error. Secrets are masked as in `sankh run`.
 
 ## Collections
 
 ```
 my-api/
-  sankh.toml            # optional: name, default_env, timeout, [order]
+  sankh.toml            # optional: name, default_env, timeout, max_body, env_proxy, [order]
   .env.example
   .gitignore            # includes .env.local
   environments/
@@ -229,32 +242,33 @@ Environment layers, lowest to highest priority: `environments/<name>.env`,
 
 The full format, including every annotation, is in [docs/format.md](docs/format.md).
 
-## Trust
-
-Request files are shell scripts, so a cloned collection never runs until you
-trust it. Trust is stored in `~/.config/sankh/trust.toml` (or
-`$SANKH_CONFIG_DIR`). In a git repository the HEAD commit is recorded. When
-HEAD moves, trust carries forward if nothing under the trusted folder changed;
-otherwise it lapses and lists the changed files, so pulled changes are reviewed
-before they run.
-
-## Secrets
+## Secrets and safety
 
 - Values of variables whose names contain `TOKEN`, `SECRET`, `KEY`,
   `PASSWORD`, `AUTH` or `COOKIE` are replaced with `***` in all output,
-  reports and UI responses, including captured values.
+  reports and UI responses, including captured values. The request echo also
+  masks `Authorization`, `Proxy-Authorization` and `Cookie` headers.
 - Keep secrets in `.env.local` (gitignored) or CI secrets, never in
   `environments/*.env`.
-- Known limitation: the shell expands variables into curl's arguments, so a
-  secret can appear in the process list (`ps`) while a request runs. Use
-  curl's `-H @file` or `--config` in a request file if that matters.
+- Values never leave the process: no shell, no command line, nothing in `ps`.
+- `@file` paths (`-d @body.json`, `-F file=@logo.png`, `--cacert`) must stay
+  inside the collection folder.
+- `-k` prints a warning once per run, and the UI shows a banner on the
+  response.
 
 ## How it runs a file
 
-Sankh never modifies a request file. It sources the file in a shell (`bash`
-if the shebang names it, else `sh`) after defining a `curl` function that adds
-`-o`, `-D` and `-w '%{json}'` to record the body, headers and timing. If a
-raw-mode file calls curl several times, the last response is checked.
+Sankh never modifies a request file, and never executes it. It reads the
+annotations, splits the curl command with POSIX quoting rules, expands
+`$VAR`, `${VAR}` and `${VAR:-default}` from the environment (an undefined
+variable is an error), and sends the request with its own HTTP client
+(rustls; system certificates). Pipes, redirections, `$(...)`, `&&` and other
+shell syntax are errors, as is any curl flag it does not support. The full
+list is in [curl flags](https://sankh.dev/docs/curl-flags).
+
+Responses are capped at 10 MB (`max_body` in `sankh.toml`), requests time out
+after 30 s (`timeout`, `# @timeout` or `-m`), and `-L` follows at most 50
+redirects.
 
 ## Development
 

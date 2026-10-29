@@ -12,7 +12,7 @@ collection or folder and paste its `curl` command.
 sankh import postman "My API.postman_collection.json" \
   --env dev.postman_environment.json --env prod.postman_environment.json \
   -o my-api
-sankh trust my-api
+sankh run my-api --env dev --check
 sankh run my-api --env dev
 ```
 
@@ -34,7 +34,7 @@ conversion without a terminal:
    the values to set in `.env.local`, and warnings for each file. Nothing is
    written yet.
 5. Choose **Import** (the button names the folder). The new collection is added to the workspace
-   and selected. Review the files, then trust it to run requests.
+   and selected.
 
 The destination cannot be inside, or contain, a collection that is already
 open.

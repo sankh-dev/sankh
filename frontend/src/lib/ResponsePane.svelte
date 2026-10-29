@@ -2,16 +2,25 @@
 	import Icon from './Icon.svelte';
 	import ResponseBody from './ResponseBody.svelte';
 	import type { AnnotationKind } from './jsonpath';
-	import type { RequestResult } from './types';
+	import type { ErrorKind, RequestResult } from './types';
 
 	interface Props {
 		result: RequestResult | null;
+		/** Some request in the current run skipped TLS certificate checks. */
+		runInsecure?: boolean;
 		/** Adds an `@expect` / `@capture` line to the open request. */
 		onadd?: (kind: AnnotationKind, line: string) => void;
 	}
 
-	let { result, onadd }: Props = $props();
-	let tab = $state<'body' | 'headers' | 'log'>('body');
+	let { result, runInsecure = false, onadd }: Props = $props();
+	let tab = $state<'body' | 'headers' | 'request'>('body');
+	let shownTab = $derived(result?.response ? tab : 'request');
+
+	const ERROR_KINDS: Partial<Record<ErrorKind, string>> = {
+		transport: 'Connection error',
+		parse: 'Cannot read request',
+		config: 'Configuration error'
+	};
 
 	function formatSize(n: number) {
 		if (n < 1024) return `${n} B`;
@@ -27,6 +36,16 @@
 	}
 </script>
 
+{#snippet headerTable(headers: [string, string][])}
+	<table>
+		<tbody>
+			{#each headers as [k, v], i (i)}
+				<tr><th class="mono">{k}</th><td class="mono">{v}</td></tr>
+			{/each}
+		</tbody>
+	</table>
+{/snippet}
+
 <div class="pane">
 	{#if !result}
 		<div class="empty">
@@ -37,19 +56,44 @@
 		<div class="summary">
 			<span class="outcome {result.outcome}">{result.outcome}</span>
 			{#if result.response}
-				<span class="status {statusClass(result.response.status)}">{result.response.status}</span>
-				<span class="meta">{result.response.time_ms.toFixed(0)} ms</span>
-				<span class="meta">{formatSize(result.response.size)}</span>
-				<span class="meta url mono" title={result.response.url}>{result.response.url}</span>
+				{@const res = result.response}
+				<span class="status {statusClass(res.status)}">{res.status}</span>
+				<span class="meta mono">{res.version}</span>
+				<span class="meta">
+					{res.time_ms.toFixed(0)} ms{#if res.ttfb_ms !== undefined}&nbsp;(TTFB {res.ttfb_ms.toFixed(0)} ms){/if}
+				</span>
+				<span class="meta">{formatSize(res.size)}</span>
+				<span class="meta url mono" title={res.url}>{res.url}</span>
 			{/if}
 		</div>
 
-		{#if result.error}
-			<pre class="error">{result.error}</pre>
+		{#if result.insecure || runInsecure}
+			<div class="insecure" role="status">
+				<Icon name="alert" size={12} />
+				{result.insecure
+					? 'TLS certificate verification is disabled for this request (-k).'
+					: 'TLS certificate verification is disabled for some requests in this run (-k).'}
+			</div>
 		{/if}
 
-		{#if result.assertions.length || result.warnings.length || result.captures.length}
+		{#if result.error}
+			<div class="error">
+				{#if result.outcome === 'error' && result.error_kind && ERROR_KINDS[result.error_kind]}
+					<strong class="kind">{ERROR_KINDS[result.error_kind]}</strong>
+				{/if}
+				<pre>{result.error}</pre>
+			</div>
+		{/if}
+
+		{#if result.assertions.length || result.warnings.length || result.captures.length || result.diagnostics?.length}
 			<ul class="checks">
+				{#each result.diagnostics ?? [] as d, i (i)}
+					<li class={d.severity === 'error' ? 'fail' : 'warn'}>
+						<span class="mark">{#if d.severity === 'error'}✗{:else}<Icon name="alert" size={12} />{/if}</span>
+						{#if d.line}<code class="pos">{d.line}{d.column ? `:${d.column}` : ''}</code>{/if}
+						<span class="msg">{d.message}{d.help ? ` (${d.help})` : ''}</span>
+					</li>
+				{/each}
 				{#each result.assertions as a (a.label)}
 					<li class={a.passed ? 'pass' : 'fail'}>
 						<span class="mark">{a.passed ? '✓' : '✗'}</span>
@@ -66,32 +110,65 @@
 			</ul>
 		{/if}
 
-		{#if result.response}
+		{#if result.response || result.request}
+			{@const res = result.response}
+			{@const req = result.request}
 			<div class="tabs" role="tablist">
-				<button role="tab" aria-selected={tab === 'body'} class={{ active: tab === 'body' }} onclick={() => (tab = 'body')}>Body</button>
-				<button role="tab" aria-selected={tab === 'headers'} class={{ active: tab === 'headers' }} onclick={() => (tab = 'headers')}>
-					Headers <span class="count">{result.response.headers.length}</span>
-				</button>
-				<button role="tab" aria-selected={tab === 'log'} class={{ active: tab === 'log' }} onclick={() => (tab = 'log')}>Log</button>
-			</div>
-			<div class="content">
-				{#if tab === 'body'}
-					<ResponseBody response={result.response} {onadd} />
-					{#if result.response.body_truncated}<p class="meta">Body truncated for display.</p>{/if}
-				{:else if tab === 'headers'}
-					<table>
-						<tbody>
-							{#each result.response.headers as [k, v], i (i)}
-								<tr><th class="mono">{k}</th><td class="mono">{v}</td></tr>
-							{/each}
-						</tbody>
-					</table>
-				{:else}
-					<pre class="mono">{result.stderr || 'No output.'}</pre>
+				{#if res}
+					<button role="tab" aria-selected={shownTab === 'body'} class={{ active: shownTab === 'body' }} onclick={() => (tab = 'body')}>Body</button>
+					<button role="tab" aria-selected={shownTab === 'headers'} class={{ active: shownTab === 'headers' }} onclick={() => (tab = 'headers')}>
+						Headers <span class="count">{res.headers.length}</span>
+					</button>
+				{/if}
+				{#if req || res?.redirects}
+					<button role="tab" aria-selected={shownTab === 'request'} class={{ active: shownTab === 'request' }} onclick={() => (tab = 'request')}>
+						Request
+						{#if res?.redirects}<span class="count" title="Redirects followed">{res.redirects.length}</span>{/if}
+					</button>
 				{/if}
 			</div>
-		{:else if result.stderr}
-			<pre class="content mono">{result.stderr}</pre>
+			<div class="content">
+				{#if shownTab === 'body' && res}
+					{#if res.body_capped}
+						<p class="notice">
+							The body is larger than the <code>max_body</code> limit (set in <code>sankh.toml</code>); only the
+							first part is shown.
+						</p>
+					{/if}
+					{#if res.sha256}<p class="meta">SHA-256 <code class="digest">{res.sha256}</code></p>{/if}
+					<ResponseBody response={res} {onadd} />
+					{#if res.body_truncated && !res.body_capped}<p class="meta">Body truncated for display.</p>{/if}
+				{:else if shownTab === 'headers' && res}
+					{@render headerTable(res.headers)}
+				{:else}
+					{#if req}
+						<p class="line mono">
+							<span class="method method-{req.method}">{req.method}</span>
+							<span class="req-url">{req.url}</span>
+						</p>
+						{@render headerTable(req.headers)}
+						{#if req.body !== undefined}
+							<h4>Body <span class="meta">{formatSize(req.body_size)}</span></h4>
+							<pre class="mono req-body">{req.body}</pre>
+						{:else if req.body_size}
+							<p class="meta">Body: {formatSize(req.body_size)} (not shown)</p>
+						{/if}
+					{/if}
+					{#if res?.redirects}
+						<h4>Redirects</h4>
+						<ol class="redirects mono">
+							{#each res.redirects as hop, i (i)}
+								<li>
+									<span class="status {statusClass(hop.status)}">{hop.status}</span>
+									<span class="hop" title={hop.url}>{hop.url}</span>
+									<span class="arrow">→</span>
+									<span class="hop" title={hop.location}>{hop.location}</span>
+								</li>
+							{/each}
+						</ol>
+					{/if}
+				{/if}
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -173,11 +250,39 @@
 		white-space: nowrap;
 	}
 	.error {
-		margin: 0;
 		padding: 8px 12px;
 		color: var(--fail);
-		white-space: pre-wrap;
 		border-bottom: 1px solid var(--border);
+	}
+	.error .kind {
+		display: block;
+		margin-bottom: 2px;
+		font-size: 12px;
+	}
+	.insecure,
+	.notice {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		background: var(--warn-bg);
+		color: #f8e3a8;
+		font-size: 12px;
+	}
+	.insecure {
+		border-bottom: 1px solid var(--warn-border);
+	}
+	.insecure :global(.icon) {
+		color: var(--warn);
+	}
+	.notice {
+		display: block;
+		margin: 0 0 8px;
+		border: 1px solid var(--warn-border);
+		border-radius: var(--radius-sm);
+	}
+	.pos {
+		color: var(--muted);
 	}
 	.checks {
 		list-style: none;
@@ -265,5 +370,66 @@
 	}
 	td {
 		word-break: break-all;
+	}
+	.content > .meta {
+		margin: 0 0 8px;
+	}
+	.digest {
+		color: var(--text);
+		word-break: break-all;
+	}
+	.line {
+		display: flex;
+		gap: 8px;
+		align-items: baseline;
+		margin: 0 0 8px;
+	}
+	.req-url {
+		word-break: break-all;
+	}
+	h4 {
+		margin: 12px 0 4px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--muted);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	h4 .meta {
+		text-transform: none;
+		letter-spacing: 0;
+		font-weight: 400;
+	}
+	.req-body {
+		padding: 6px 8px;
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+	}
+	.redirects {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.redirects li {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		padding: 2px 0;
+		min-width: 0;
+	}
+	.redirects .status {
+		padding: 2px 6px;
+		font-size: 11px;
+	}
+	.hop {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		min-width: 0;
+	}
+	.arrow {
+		color: var(--muted);
+		flex: none;
 	}
 </style>

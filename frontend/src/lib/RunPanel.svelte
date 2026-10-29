@@ -20,7 +20,10 @@
 <div class="panel">
 	<div class="head">
 		<strong class="title">Run {name}{run.target ? ` / ${run.target}` : ''}</strong>
-		{#if run.summary}
+		{#if run.summary && run.blocked}
+			<span class="pill bad" title="Files with errors stopped the run">blocked: fix {done} file{done === 1 ? '' : 's'}</span>
+			<span class="muted">nothing was sent</span>
+		{:else if run.summary}
 			<span class="pill ok">{run.summary.passed} passed</span>
 			{#if run.summary.failed}<span class="pill bad">{run.summary.failed} failed</span>{/if}
 			{#if run.summary.errors}<span class="pill bad">{run.summary.errors} errors</span>{/if}
@@ -44,14 +47,15 @@
 		{#each run.paths as path (path)}
 			{@const r = run.results[path]}
 			{@const skipped = !r && run.skipped.includes(path)}
+			{@const active = !r && !skipped && !run.summary && run.current === path}
 			<li>
 				<button class={{ selected: selected === path }} onclick={() => onpick(path)}>
-					<span class="mark {r?.outcome ?? (!skipped && run.current === path ? 'running' : 'pending')}">
+					<span class="mark {r?.outcome ?? (active ? 'running' : 'pending')}">
 						{#if r?.outcome === 'cancelled'}
 							<Icon name="stop" size={9} />
 						{:else if r}
 							<Icon name={r.outcome === 'passed' ? 'check' : 'x'} size={12} />
-						{:else if run.current === path}
+						{:else if active}
 							<span class="spinner"></span>
 						{:else}
 							<span class="pip"></span>
@@ -60,7 +64,11 @@
 					<span class="name">{r?.name ?? path}</span>
 					{#if r?.response}<span class="muted mono">{r.response.status}</span>{/if}
 					{#if r?.outcome === 'cancelled'}<span class="cancelled">stopped</span>{/if}
-					{#if skipped}<span class="muted">skipped</span>{/if}
+					{#if skipped}
+						<span class="muted">{run.blocked ? 'not sent' : 'skipped'}</span>
+					{:else if !r && run.summary}
+						<span class="muted">not run</span>
+					{/if}
 					<span class="muted mono path">{path}</span>
 				</button>
 			</li>

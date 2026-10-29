@@ -16,7 +16,6 @@ use sankh_core::import::{self, ImportError};
 use sankh_core::redact::{Redactor, is_secret_name};
 use sankh_core::report::Summary;
 use sankh_core::select::{self, Filters};
-use sankh_core::trust::{self, TrustStore};
 use sankh_core::workspace::WorkspaceError;
 use sankh_core::{RunContext, RunOptions, runner};
 use serde::Deserialize;
@@ -94,11 +93,6 @@ fn collection(state: &AppState, cid: &str) -> Result<Collection, ApiError> {
         .map_err(|e| not_found(format!("collection `{cid}` is unavailable: {e}")))
 }
 
-fn trust_json(collection: &Collection) -> Value {
-    let store = TrustStore::load().unwrap_or_default();
-    serde_json::to_value(store.status(&collection.root)).unwrap_or(Value::Null)
-}
-
 fn slot_json(slot: &Slot) -> Value {
     match &slot.collection {
         Ok(c) => json!({
@@ -108,7 +102,6 @@ fn slot_json(slot: &Slot) -> Value {
             "scratch": slot.is_scratch(),
             "missing": false,
             "error": null,
-            "trust": trust_json(c),
             "default_env": c.config.default_env,
         }),
         Err(e) => json!({
@@ -118,7 +111,6 @@ fn slot_json(slot: &Slot) -> Value {
             "scratch": slot.is_scratch(),
             "missing": true,
             "error": e,
-            "trust": null,
             "default_env": null,
         }),
     }
@@ -402,8 +394,10 @@ pub struct ImportBody {
 
 pub async fn import(Json(body): Json<ImportBody>) -> ApiResult {
     let name = body.name.unwrap_or_else(|| "Imported request".into());
-    let content = format::import_curl(&body.curl, &name).map_err(bad)?;
-    Ok(Json(json!({ "content": content })))
+    let imported = format::import_curl(&body.curl, &name).map_err(bad)?;
+    Ok(Json(
+        json!({ "content": imported.content, "notes": imported.notes }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -813,18 +807,6 @@ pub async fn clear_captures(
     Ok(Json(json!({ "cleared": key })))
 }
 
-pub async fn get_trust(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
-    Ok(Json(trust_json(&collection(&state, &cid)?)))
-}
-
-pub async fn post_trust(State(state): State<Arc<AppState>>, Path(cid): Path<String>) -> ApiResult {
-    let c = collection(&state, &cid)?;
-    let mut store = TrustStore::load().map_err(|e| bad(e.to_string()))?;
-    store.trust(&c.root).map_err(|e| bad(e.to_string()))?;
-    store.save().map_err(|e| bad(e.to_string()))?;
-    Ok(Json(trust_json(&c)))
-}
-
 #[derive(Deserialize)]
 pub struct RunBody {
     /// File or folder relative to the root; empty for the whole collection.
@@ -842,13 +824,6 @@ pub async fn start_run(
     Json(body): Json<RunBody>,
 ) -> ApiResult {
     let collection = collection(&state, &cid)?;
-    let trusted = trust::ensure(&collection, false).map_err(|e| {
-        ApiError(
-            StatusCode::FORBIDDEN,
-            e.to_string(),
-            Some(trust_json(&collection)),
-        )
-    })?;
     let target = collection.resolve(&body.path)?;
     if !target.exists() {
         return Err(not_found(format!("{} not found", body.path)));
@@ -877,9 +852,24 @@ pub async fn start_run(
 
     let state2 = state.clone();
     tokio::task::spawn_blocking(move || {
+        if let Some(rejected) = runner::preflight(&collection, &files, &env) {
+            let blocked: Vec<String> = files
+                .iter()
+                .map(|f| collection.rel(f))
+                .filter(|p| !rejected.iter().any(|r| r.path == *p))
+                .collect();
+            for result in &rejected {
+                handle.push(json!({ "type": "result", "result": result }));
+            }
+            handle.push(json!({ "type": "blocked", "skipped": blocked }));
+            handle.push(json!({ "type": "done", "summary": Summary::of(&rejected) }));
+            handle.finish();
+            return;
+        }
         let mut options = RunOptions::for_collection(&collection);
         options.cancel = handle.cancel.clone();
         options.reveal_secrets = true;
+        options.policy = state2.target_policy.clone();
         let mut ctx = RunContext::new(env, options);
         let mut results = Vec::new();
         for file in &files {
@@ -888,7 +878,7 @@ pub async fn start_run(
             }
             let rel = collection.rel(file);
             handle.push(json!({ "type": "running", "path": rel }));
-            let result = runner::run_request(&trusted, &collection, file, &mut ctx);
+            let result = runner::run_request(&collection, file, &mut ctx);
             handle.push(json!({ "type": "result", "result": result }));
             results.push(result);
         }

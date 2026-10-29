@@ -48,7 +48,6 @@
 	}: Props = $props();
 
 	let open = $derived(isOpen(col.id, ''));
-	let trusted = $derived(col.trust?.state === 'trusted');
 	let children = $derived(tree?.type === 'folder' ? tree.children : []);
 	let menu = $derived.by(() => {
 		const items: MenuItem[] = [];
@@ -82,10 +81,6 @@
 			<span class="name">{col.name}</span>
 			{#if col.missing}
 				<span class="badge bad">missing</span>
-			{:else if col.trust?.state === 'changed'}
-				<span class="badge warn" title="Changed since it was trusted">changed</span>
-			{:else if !trusted}
-				<span class="badge warn" title="Not trusted: nothing runs yet">untrusted</span>
 			{/if}
 		</button>
 		<span class="actions">
@@ -97,7 +92,7 @@
 					class="icon-btn run"
 					title="Run collection"
 					aria-label="Run {col.name}"
-					disabled={!trusted || busy}
+					disabled={busy}
 					onclick={() => onrun('')}
 				>
 					<Icon name="play" size={12} />
@@ -190,10 +185,6 @@
 		padding: 1px 6px;
 		border-radius: 999px;
 		flex: none;
-	}
-	.badge.warn {
-		color: var(--warn);
-		background: var(--warn-bg);
 	}
 	.badge.bad {
 		color: var(--fail);

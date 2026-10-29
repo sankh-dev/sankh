@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 const BODY_PREVIEW: usize = 2000;
 
-fn color_enabled() -> bool {
+pub fn color_enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal())
 }
@@ -86,6 +86,20 @@ impl Printer {
         }
         meta.push(r.path.clone());
         self.line(&format!("{mark} {name}  {}", dim(&meta.join("  "))));
+        if self.verbose {
+            if let Some(q) = &r.request {
+                self.line(&format!(
+                    "    {}",
+                    dim(&format!("→ {} {}", q.method, q.url))
+                ));
+            }
+            for hop in r.response.iter().flat_map(|resp| &resp.redirects) {
+                self.line(&format!(
+                    "    {}",
+                    dim(&format!("↪ {} {}", hop.status, hop.location))
+                ));
+            }
+        }
         for w in &r.warnings {
             self.line(&format!("    {} {w}", yellow("warning:")));
         }
@@ -109,11 +123,6 @@ impl Printer {
         }
         let show_body = self.verbose || r.outcome != Outcome::Passed;
         if show_body {
-            if !r.stderr.trim().is_empty() && r.outcome != Outcome::Passed {
-                for l in r.stderr.trim().lines().take(20) {
-                    self.line(&format!("    {}", dim(l)));
-                }
-            }
             if let Some(resp) = &r.response {
                 let body = resp.body.trim();
                 if !body.is_empty() {

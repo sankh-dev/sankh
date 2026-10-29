@@ -105,7 +105,7 @@ fn print_report(r: &ImportReport, dir: &Path) {
         }
     }
     println!(
-        "\nNext: review the files, then `sankh trust {0}` and `sankh run {0}`",
+        "\nNext: review the files, then `sankh run {0}`",
         dir.display()
     );
 }

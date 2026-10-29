@@ -2,8 +2,8 @@
 //! list, inspect and run collections.
 //!
 //! It is read and run only: it never writes request files, environments or
-//! the workspace, and it never grants trust. Running goes through the same
-//! `trust::ensure` and redaction as `sankh run`, without the CI override.
+//! the workspace. Running goes through the same checks and redaction as
+//! `sankh run`.
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -14,7 +14,6 @@ use sankh_core::env::{self, ENV_LOCAL};
 use sankh_core::redact::Redactor;
 use sankh_core::report::{self, Summary};
 use sankh_core::select::{self, Filters};
-use sankh_core::trust::{self, TrustError, TrustStore};
 use sankh_core::workspace::{Opened, Workspace};
 use sankh_core::{
     Collection, Env, Outcome, RequestResult, RunContext, RunOptions, runner, scratch,
@@ -27,7 +26,6 @@ use std::sync::Arc;
 /// Response bodies longer than this are cut in tool results, to keep them
 /// within an agent's context. Assertions still see the full body.
 const MAX_BODY: usize = 16 * 1024;
-const MAX_STDERR: usize = 4 * 1024;
 
 /// Which collections the server exposes.
 pub enum WorkspaceSource {
@@ -149,14 +147,13 @@ impl SankhMcp {
 #[tool_router]
 impl SankhMcp {
     /// List the collections this server exposes, with their id, name, root
-    /// folder, environments and trust status. Use the id in other tools.
+    /// folder and environments. Use the id in other tools.
     #[tool(annotations(
         title = "List collections",
         read_only_hint = true,
         open_world_hint = false
     ))]
     fn list_collections(&self) -> Result<String, String> {
-        let store = TrustStore::load().map_err(|e| e.to_string())?;
         let list: Vec<Value> = self
             .opened()?
             .iter()
@@ -166,7 +163,6 @@ impl SankhMcp {
                     "name": c.name(),
                     "root": c.root.display().to_string(),
                     "missing": false,
-                    "trust": store.status(&c.root),
                     "default_env": c.config.default_env,
                     "envs": env::list_envs(c),
                 }),
@@ -268,8 +264,9 @@ impl SankhMcp {
     /// Run a request file, a folder, or the whole collection, and return a
     /// summary plus the JSON report (outcome, assertions, captures and the
     /// response for each request). Requests in one call chain captured values
-    /// like `sankh run`; each call starts fresh. Refuses collections the user
-    /// has not trusted with `sankh trust`.
+    /// like `sankh run`; each call starts fresh. Every selected file is
+    /// checked first; if any has an error, nothing is sent and the errors
+    /// are returned.
     #[tool(annotations(
         title = "Run requests",
         read_only_hint = false,
@@ -288,12 +285,11 @@ impl SankhMcp {
 #[tool_handler(
     router = self.tool_router,
     name = "sankh",
-    instructions = "Sankh runs API collections: folders of .sh files, each one curl command with # @expect / # @capture annotations. Call list_collections first and use its ids. Request files are shell scripts: a collection only runs after the user runs `sankh trust <path>`; this server never grants trust. Secret values appear as ***."
+    instructions = "Sankh runs API collections: folders of .sh files, each one curl command with # @expect / # @capture annotations. Call list_collections first and use its ids. Sankh parses the curl command and sends it with its own HTTP client; nothing is executed by a shell. Secret values appear as ***."
 )]
 impl ServerHandler for SankhMcp {}
 
 fn run_blocking(c: &Collection, args: RunArgs) -> Result<CallToolResult, String> {
-    let trusted = trust::ensure(c, false).map_err(|e| trust_message(&e))?;
     let rel = args.path.as_deref().unwrap_or("");
     let target = c.resolve(rel).map_err(|e| e.to_string())?;
     if !target.exists() {
@@ -310,10 +306,27 @@ fn run_blocking(c: &Collection, args: RunArgs) -> Result<CallToolResult, String>
         return Err("no requests matched".into());
     }
 
+    let used_env = env_name.or_else(|| c.config.default_env.clone());
+    if let Some(rejected) = runner::preflight(c, &files, &env) {
+        let summary = Summary::of(&rejected);
+        let mut text = summary_text(&c.name(), used_env.as_deref(), &summary, &rejected);
+        text.push_str("\nNothing was sent: fix these files first.");
+        let report = json!({
+            "collection": c.name(),
+            "env": used_env,
+            "summary": summary,
+            "results": rejected,
+        });
+        return Ok(CallToolResult::success(vec![
+            ContentBlock::text(text),
+            ContentBlock::text(pretty(&report)?),
+        ]));
+    }
+
     let mut ctx = RunContext::new(env, RunOptions::for_collection(c));
     let mut results = Vec::new();
     for file in &files {
-        let mut result = runner::run_request(&trusted, c, file, &mut ctx);
+        let mut result = runner::run_request(c, file, &mut ctx);
         let failed = result.outcome != Outcome::Passed;
         shrink(&mut result);
         results.push(result);
@@ -322,7 +335,6 @@ fn run_blocking(c: &Collection, args: RunArgs) -> Result<CallToolResult, String>
         }
     }
 
-    let used_env = env_name.or_else(|| c.config.default_env.clone());
     let summary = Summary::of(&results);
     let report = json!({
         "collection": c.name(),
@@ -335,25 +347,6 @@ fn run_blocking(c: &Collection, args: RunArgs) -> Result<CallToolResult, String>
         ContentBlock::text(text),
         ContentBlock::text(pretty(&report)?),
     ]))
-}
-
-fn trust_message(e: &TrustError) -> String {
-    const NOTE: &str = "Request files are shell scripts: ask the user to review them and run the command themselves. This server never grants trust.";
-    match e {
-        TrustError::Untrusted(path) => {
-            format!("{path} is not trusted. {NOTE} Command: `sankh trust {path}`")
-        }
-        TrustError::Changed {
-            path,
-            old,
-            new,
-            changed,
-        } => format!(
-            "{path} changed since it was trusted (git {old} -> {new}{}). {NOTE} Command: `sankh trust {path}`",
-            trust::changed_summary(changed)
-        ),
-        TrustError::Store { .. } => e.to_string(),
-    }
 }
 
 fn summary_text(name: &str, env: Option<&str>, s: &Summary, results: &[RequestResult]) -> String {
@@ -378,7 +371,7 @@ fn summary_text(name: &str, env: Option<&str>, s: &Summary, results: &[RequestRe
     out
 }
 
-/// Cuts long bodies and stderr so results fit an agent's context.
+/// Cuts long bodies so results fit an agent's context.
 fn shrink(r: &mut RequestResult) {
     if let Some(resp) = r.response.as_mut() {
         if truncate(&mut resp.body, MAX_BODY) {
@@ -386,7 +379,9 @@ fn shrink(r: &mut RequestResult) {
         }
         resp.body_base64 = None;
     }
-    truncate(&mut r.stderr, MAX_STDERR);
+    if let Some(body) = r.request.as_mut().and_then(|q| q.body.as_mut()) {
+        truncate(body, MAX_BODY);
+    }
 }
 
 fn truncate(s: &mut String, max: usize) -> bool {
@@ -462,28 +457,23 @@ mod tests {
 
     #[test]
     fn shrink_drops_image_data() {
-        let mut r = RequestResult {
-            path: "logo.sh".into(),
-            name: "logo".into(),
-            outcome: Outcome::Passed,
-            response: Some(runner::ResponseView {
-                status: 200,
-                time_ms: 1.0,
-                size: 3,
-                url: "http://x/logo.png".into(),
-                headers: Vec::new(),
-                body: "<3 bytes of binary data>".into(),
-                body_truncated: false,
-                body_binary: true,
-                body_base64: Some("AAAA".into()),
-            }),
-            assertions: Vec::new(),
-            captures: Vec::new(),
-            error: None,
-            warnings: Vec::new(),
-            stderr: String::new(),
-            duration_ms: 1.0,
-        };
+        let mut r = RequestResult::new("logo.sh".into(), "logo".into());
+        r.response = Some(runner::ResponseView {
+            status: 200,
+            version: "HTTP/1.1".into(),
+            time_ms: 1.0,
+            ttfb_ms: None,
+            size: 3,
+            url: "http://x/logo.png".into(),
+            headers: Vec::new(),
+            body: "<3 bytes of binary data>".into(),
+            body_truncated: false,
+            body_capped: false,
+            body_binary: true,
+            sha256: None,
+            body_base64: Some("AAAA".into()),
+            redirects: Vec::new(),
+        });
         shrink(&mut r);
         assert_eq!(r.response.unwrap().body_base64, None);
     }
@@ -517,12 +507,5 @@ mod tests {
             "users/01-list.sh"
         );
         assert_eq!(out["children"][0]["children"].as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn trust_errors_never_suggest_the_ci_override() {
-        let msg = trust_message(&TrustError::Untrusted("/x".into()));
-        assert!(msg.contains("sankh trust /x"));
-        assert!(!msg.contains("--trust"));
     }
 }

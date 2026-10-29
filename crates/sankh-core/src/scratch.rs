@@ -1,9 +1,7 @@
 //! The built-in Scratch collection: always available, for trying requests
-//! without an existing folder. It lives in the user's data directory and is
-//! trusted automatically, because only Sankh and the user write to it.
+//! without an existing folder. It lives in the user's data directory.
 
 use crate::collection::{Collection, CollectionError};
-use crate::trust::{TrustError, TrustStatus, TrustStore};
 use std::path::{Path, PathBuf};
 
 pub const ID: &str = "scratch";
@@ -26,8 +24,6 @@ pub enum ScratchError {
     Create(String, std::io::Error),
     #[error(transparent)]
     Collection(#[from] CollectionError),
-    #[error(transparent)]
-    Trust(#[from] TrustError),
 }
 
 /// Where Scratch lives: `<data_dir>/scratch`.
@@ -35,14 +31,9 @@ pub fn dir() -> PathBuf {
     crate::paths::data_dir().join("scratch")
 }
 
-/// Creates (if needed), trusts and opens Scratch.
+/// Creates (if needed) and opens Scratch.
 pub fn ensure() -> Result<Collection, ScratchError> {
-    let collection = create_in(&dir())?;
-    let mut store = TrustStore::load()?;
-    if trust_in(&mut store, &collection.root)? {
-        store.save()?;
-    }
-    Ok(collection)
+    create_in(&dir())
 }
 
 /// Creates the skeleton when `dir` does not exist yet; an existing folder is
@@ -61,21 +52,12 @@ pub fn create_in(dir: &Path) -> Result<Collection, ScratchError> {
     Ok(Collection::open(dir)?)
 }
 
-/// Trusts `root` unless it already is; returns whether the store changed.
-pub fn trust_in(store: &mut TrustStore, root: &Path) -> Result<bool, TrustError> {
-    if matches!(store.status(root), TrustStatus::Trusted { .. }) {
-        return Ok(false);
-    }
-    store.trust(root)?;
-    Ok(true)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn creates_once_and_trusts() {
+    fn creates_once() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("scratch");
         let c = create_in(&dir).unwrap();
@@ -85,9 +67,5 @@ mod tests {
         std::fs::remove_file(dir.join("environments/default.env")).unwrap();
         create_in(&dir).unwrap();
         assert!(!dir.join("environments/default.env").exists());
-
-        let mut store = TrustStore::default();
-        assert!(trust_in(&mut store, &c.root).unwrap());
-        assert!(!trust_in(&mut store, &c.root).unwrap());
     }
 }

@@ -27,7 +27,7 @@ const layout = `my-api/
 const ci = `- run: curl -fsSL https://sankh.dev/install.sh | sh
 - run: >-
     sankh run . --env ci --folder smoke
-    --trust --report junit
+    --report junit
   env:
     TOKEN: \${{ secrets.API_TOKEN }}`;
 

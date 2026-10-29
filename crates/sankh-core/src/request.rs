@@ -1,5 +1,6 @@
 //! Parsed request model.
 
+pub use crate::diag::ErrorKind;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -11,10 +12,60 @@ pub enum Severity {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
-    /// 1-based line number in the file.
+    /// 1-based line number in the file; 0 when it applies to the whole file.
     pub line: usize,
     pub severity: Severity,
     pub message: String,
+    /// Error class (errors only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ErrorKind>,
+    /// 1-based character column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<usize>,
+    /// Characters to underline from `column`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<usize>,
+    /// Text shown next to the underline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl Diagnostic {
+    /// A whole-line diagnostic (annotation problems).
+    pub fn line(line: usize, severity: Severity, message: impl Into<String>) -> Diagnostic {
+        Diagnostic {
+            line,
+            severity,
+            message: message.into(),
+            kind: (severity == Severity::Error).then_some(ErrorKind::Parse),
+            column: None,
+            width: None,
+            label: None,
+            help: None,
+            note: None,
+        }
+    }
+
+    /// One-line summary: `line 5:3: message (label)`.
+    pub fn summary(&self) -> String {
+        let mut out = match (self.line, self.column) {
+            (0, _) => String::new(),
+            (l, Some(c)) => format!("line {l}:{c}: "),
+            (l, None) => format!("line {l}: "),
+        };
+        out.push_str(&self.message);
+        if let Some(label) = &self.label {
+            out.push_str(&format!(": {label}"));
+        }
+        if let Some(help) = &self.help {
+            out.push_str(&format!(" (help: {})", help.replace('\n', " ")));
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,6 +205,35 @@ pub struct CurlCommand {
     pub flags: Vec<String>,
 }
 
+impl CurlCommand {
+    /// The method curl uses when there is no `-X`.
+    pub fn implied_method(&self) -> &'static str {
+        let has = |names: &[&str]| self.flags.iter().any(|f| names.contains(&f.as_str()));
+        if has(&["-I", "--head"]) {
+            "HEAD"
+        } else if has(&["-G", "--get"]) {
+            "GET"
+        } else if self.body.is_some()
+            || has(&[
+                "-d",
+                "--data",
+                "--data-ascii",
+                "--data-raw",
+                "--data-binary",
+                "--data-urlencode",
+                "--json",
+                "-F",
+                "--form",
+                "--form-string",
+            ])
+        {
+            "POST"
+        } else {
+            "GET"
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Header {
     pub name: String,
@@ -163,9 +243,10 @@ pub struct Header {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    /// Strict format: header annotations plus exactly one curl command.
+    /// Header annotations plus one curl command the form view can edit.
     Form,
-    /// Anything else; still runnable (subject to trust), edited as plain text.
+    /// The command could not be read (shell syntax, quoting); edited as plain
+    /// text and not runnable until fixed.
     Raw,
 }
 
@@ -190,6 +271,9 @@ pub struct Request {
     /// Everything after the header block.
     pub body: String,
     pub diagnostics: Vec<Diagnostic>,
+    /// The parsed command, for building the request at run time.
+    #[serde(skip)]
+    pub command: Option<crate::parse::flags::Parsed>,
 }
 
 impl Request {
