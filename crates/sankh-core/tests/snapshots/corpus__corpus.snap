@@ -7,7 +7,7 @@ $ curl https://api.github.com/repos/octocat/hello-world \
   -H "Authorization: Bearer $GITHUB_TOKEN" \
   -H "X-GitHub-Api-Version: 2022-11-28"
 GET https://api.github.com/repos/octocat/hello-world
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: application/vnd.github+json
 Authorization: Bearer <GITHUB_TOKEN>
 X-GitHub-Api-Version: 2022-11-28
@@ -19,7 +19,7 @@ $ curl -L \
   https://api.github.com/repos/OWNER/REPO/issues \
   -d '{"title":"Found a bug","body":"I'\''m having a problem with this.","labels":["bug"]}'
 POST https://api.github.com/repos/OWNER/REPO/issues
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: application/vnd.github+json
 Authorization: Bearer <GITHUB_TOKEN>
 Content-Type: application/x-www-form-urlencoded
@@ -40,7 +40,7 @@ $ curl https://api.stripe.com/v1/customers \
   -d "metadata[order_id]=6735"
 POST https://api.stripe.com/v1/customers
 Authorization: Basic PFNUUklQRV9LRVk+Og==
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 Content-Type: application/x-www-form-urlencoded
 
@@ -49,7 +49,7 @@ name=Jenny Rosen&email=jennyrosen%40example.com&metadata[order_id]=6735
 $ curl https://api.stripe.com/v1/charges -u $STRIPE_KEY: -G -d limit=3
 GET https://api.stripe.com/v1/charges?limit=3
 Authorization: Basic PFNUUklQRV9LRVk+Og==
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 ------------------------------------------------------------
 $ curl https://api.openai.com/v1/chat/completions \
@@ -60,7 +60,7 @@ $ curl https://api.openai.com/v1/chat/completions \
     "messages": [{"role": "user", "content": "Say \"hi\""}]
   }'
 POST https://api.openai.com/v1/chat/completions
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 Content-Type: application/json
 Authorization: Bearer <OPENAI_API_KEY>
@@ -89,7 +89,7 @@ $ curl 'https://example.com/search?q=rust&page=2' \
   -b 'consent=yes' \
   -H 'sec-fetch-mode: navigate'
 GET https://example.com/search?q=rust&page=2
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Cookie: consent=yes
 accept: text/html
 sec-ch-ua: "Chromium";v="124", "Not-A.Brand";v="99"
@@ -103,7 +103,7 @@ $ curl --location 'https://api.example.com/v2/orders' \
     "qty": 2
 }'
 POST https://api.example.com/v2/orders
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 Content-Type: application/json
 x-api-key: {{apiKey}}
@@ -117,7 +117,7 @@ $ curl --location --request PUT 'https://api.example.com/users/42' \
 --form 'name="Ada"' \
 --form 'avatar=@"avatar.png"'
 PUT https://api.example.com/users/42
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 Content-Type: multipart/form-data; boundary=<boundary>
 
@@ -150,12 +150,12 @@ error: flag -w is not allowed
 ------------------------------------------------------------
 $ curl -sSf --retry 3 --max-time 10 https://example.com/health
 GET https://example.com/health
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 ------------------------------------------------------------
 $ curl --json '{"name":"rex"}' "$BASE/pets"
 POST http://localhost:3000/pets
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Content-Type: application/json
 Accept: application/json
 
@@ -163,12 +163,12 @@ Accept: application/json
 ------------------------------------------------------------
 $ curl -k --cacert ca.pem --cert client.pem --key client.key https://internal.test:8443/
 GET https://internal.test:8443/
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 ------------------------------------------------------------
 $ curl -I https://example.com/
 HEAD https://example.com/
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 ------------------------------------------------------------
 $ curl https://example.com/a | jq .
@@ -209,7 +209,7 @@ error: flag --ciphers is not supported yet
 ------------------------------------------------------------
 $ curl -XPOST -H'Content-Type: text/plain' -d@body.txt localhost:8080/echo
 POST http://localhost:8080/echo
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 Content-Type: text/plain
 ------------------------------------------------------------
@@ -220,7 +220,7 @@ Referer: https://from.test/
 ------------------------------------------------------------
 $ curl "$BASE/files" -F "meta=<meta.json;type=application/json" -F "file=@data.csv;filename=upload.csv"
 POST http://localhost:3000/files
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 Content-Type: multipart/form-data; boundary=<boundary>
 
@@ -257,6 +257,6 @@ error: flag --upload-file is not supported yet
 ------------------------------------------------------------
 $ curl "https://example.com/${PATH_PART:-default}/x"
 GET https://example.com/<PATH_PART>/x
-User-Agent: sankh/0.10.1
+User-Agent: sankh/<version>
 Accept: */*
 ------------------------------------------------------------

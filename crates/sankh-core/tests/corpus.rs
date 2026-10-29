@@ -82,6 +82,10 @@ fn corpus() {
         .unwrap();
     }
     let boundary = regex::Regex::new("-{24}[A-Za-z0-9]{22}").unwrap();
+    let out = out.replace(
+        &format!("sankh/{}", env!("CARGO_PKG_VERSION")),
+        "sankh/<version>",
+    );
     insta::assert_snapshot!(boundary.replace_all(&out, "<boundary>"));
 }
 
