@@ -201,6 +201,96 @@ async fn blocks_path_traversal_in_every_collection() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+async fn upload(s: &Arc<AppState>, cid: &str, rel: &str, bytes: &[u8]) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/c/{cid}/files/{rel}"))
+        .header(header::HOST, "localhost:4747")
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from(bytes.to_vec()))
+        .unwrap();
+    let resp = app(s.clone()).oneshot(req).await.unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn lists_and_uploads_collection_files() {
+    let dir = folder(&[
+        ("a.sh", "curl x\n"),
+        ("data/body.json", "{}"),
+        (".hidden/x", "x"),
+    ]);
+    let (s, cid) = state(&dir, None);
+
+    let (status, root) = call(&s, "GET", &format!("/api/c/{cid}/files"), &[], None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(root["parent"], Value::Null);
+    assert_eq!(root["dirs"], json!([{ "name": "data", "path": "data" }]));
+    assert_eq!(root["files"][0]["path"], "a.sh");
+    let (_, data) = call(
+        &s,
+        "GET",
+        &format!("/api/c/{cid}/files?dir=data"),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(data["parent"], "");
+    assert_eq!(
+        data["files"],
+        json!([{ "name": "body.json", "path": "data/body.json", "size": 2 }])
+    );
+
+    let png = [0x89, b'P', b'N', b'G', 0, 1, 2];
+    let (status, body) = upload(&s, &cid, "files/logo.png", &png).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["path"], "files/logo.png");
+    assert_eq!(
+        std::fs::read(dir.path().join("files/logo.png")).unwrap(),
+        png
+    );
+
+    let (status, _) = upload(&s, &cid, "files/logo.png", b"other").await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        std::fs::read(dir.path().join("files/logo.png")).unwrap(),
+        png
+    );
+
+    for rel in [
+        "a.sh",
+        "new.sh",
+        "environments/dev.txt",
+        "x/.env",
+        ".env.local",
+        "sankh.toml",
+        ".hidden/y",
+        "..%2Fevil.txt",
+        "%2Ftmp%2Fevil.txt",
+        "files/",
+    ] {
+        let (status, _) = upload(&s, &cid, rel, b"x").await;
+        assert!(
+            status == StatusCode::BAD_REQUEST || status == StatusCode::FORBIDDEN,
+            "{rel}: {status}"
+        );
+    }
+    let (status, _) = call(
+        &s,
+        "GET",
+        &format!("/api/c/{cid}/files?dir=..%2F.."),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
 #[tokio::test]
 async fn manages_environments_and_env_local() {
     let d = folder(&[

@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
+	import BodyEditor from './BodyEditor.svelte';
 	import Icon from './Icon.svelte';
 	import VarChips from './VarChips.svelte';
-	import { formatJson } from './format';
+	import { bodyFlagText, formRows, joinFlags, splitFlags, urlRows } from './bodyForm';
 	import { varHover, varSuggest } from './suggest';
 	import { needsValue, refs, type VarInfo, type VarOption, type VarStatus } from './vars';
 	import type { RequestForm } from './types';
 
 	interface Props {
 		form: RequestForm;
+		/** Collection id, for picking and uploading body files. */
+		cid: string;
 		onedit: () => void;
 		/** Form/Raw switch, shown before the title. */
 		modeSwitch: Snippet;
@@ -25,6 +28,7 @@
 
 	let {
 		form = $bindable(),
+		cid,
 		onedit,
 		modeSwitch,
 		actions,
@@ -51,17 +55,19 @@
 	let tagBad = $state(false);
 	let rows = $state<HTMLElement>();
 
-	let flagsText = $derived(form.curl.flags.join(' '));
+	let flagsText = $derived(splitFlags(form.curl.flags).line.join(' '));
 	let headerText = $derived(form.curl.headers.map((h) => `${h.name} ${h.value}`).join('\n'));
-	let checkedText = $derived(`${form.curl.url}\n${headerText}\n${form.curl.body ?? ''}\n${flagsText}`);
+	let bodyText = $derived(`${form.curl.body ?? ''}\n${bodyFlagText(form.curl.flags)}`);
+	let checkedText = $derived(`${form.curl.url}\n${headerText}\n${bodyText}\n${flagsText}`);
 	let counts = $derived<Partial<Record<Tab, number>>>({
 		headers: form.curl.headers.filter((h) => h.name || h.value).length,
+		body: formRows(form.curl.flags).length + urlRows(form.curl.flags).length,
 		assertions: form.expects.filter(Boolean).length,
 		captures: form.captures.filter(Boolean).length
 	});
 	let warn = $derived<Partial<Record<Tab, boolean>>>({
 		headers: flaggedIn(headerText),
-		body: flaggedIn(form.curl.body ?? ''),
+		body: flaggedIn(bodyText),
 		settings: flaggedIn(flagsText)
 	});
 
@@ -87,25 +93,10 @@
 		onedit();
 	}
 
+	/** Body fields stay with the Body tab; only the other flags are edited here. */
 	function setFlags(text: string) {
-		form.curl.flags = text.split(/\s+/).filter(Boolean);
+		form.curl.flags = joinFlags(text.split(/\s+/).filter(Boolean), splitFlags(form.curl.flags).body);
 		edit();
-	}
-
-	function setBody(text: string) {
-		form.curl.body = text === '' ? null : text;
-		edit();
-	}
-
-	let formatError = $state<string | null>(null);
-
-	function formatBody() {
-		try {
-			const pretty = formatJson(form.curl.body ?? '');
-			if (pretty !== form.curl.body) setBody(pretty);
-		} catch (e) {
-			formatError = e instanceof Error ? e.message : String(e);
-		}
 	}
 
 	function commitTag() {
@@ -353,29 +344,7 @@
 				</div>
 			</div>
 		{:else if tab === 'body'}
-			<div class="body-wrap">
-				<textarea
-					class="mono body"
-					value={form.curl.body ?? ''}
-					placeholder={'{"name": "test"}'}
-					oninput={(e) => {
-						formatError = null;
-						setBody(e.currentTarget.value);
-					}}
-					aria-label="Body"
-					{@attach suggest}
-				></textarea>
-				{#if form.curl.body?.trim()}
-					<button
-						class={['format', formatError && 'bad']}
-						onclick={formatBody}
-						title={formatError ?? 'Format JSON'}
-						aria-label="Format JSON"
-					>
-						<Icon name={formatError ? 'alert' : 'braces'} size={12} />{formatError ? 'Not JSON' : 'Format'}
-					</button>
-				{/if}
-			</div>
+			<BodyEditor bind:form {cid} {onedit} {vars} {varStatus} {varInfo} {env} {onsetvar} />
 		{:else if tab === 'assertions'}
 			{@render lines(form.expects, '@expect', 'status 201  ·  json .data.id exists', 'Assertion')}
 			{#if !counts.assertions}
@@ -653,40 +622,6 @@
 	.kv-row:hover .del,
 	.kv-row:focus-within .del {
 		opacity: 1;
-	}
-	.body-wrap {
-		position: relative;
-		flex: 1;
-		display: flex;
-		min-height: 160px;
-	}
-	.body {
-		flex: 1;
-		width: 100%;
-		resize: none;
-		font-size: 12.5px;
-		padding-right: 90px;
-	}
-	.format {
-		position: absolute;
-		top: 6px;
-		right: 6px;
-		min-height: 22px;
-		padding: 0 8px;
-		gap: 4px;
-		font-size: 11px;
-		color: var(--muted);
-		background: var(--panel-2);
-		opacity: 0.85;
-	}
-	.format:hover:not(:disabled) {
-		color: var(--text);
-		opacity: 1;
-	}
-	.format.bad {
-		color: var(--warn);
-		border-color: var(--warn-border);
-		background: var(--warn-bg);
 	}
 	.settings {
 		display: grid;

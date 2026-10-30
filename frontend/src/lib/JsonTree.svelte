@@ -14,7 +14,16 @@
 	const PAGE = 100;
 
 	// Fresh per response, so a new body opens fully expanded.
-	let collapsed = $derived.by(() => {
+	// Nodes shallower than `limit` are open unless toggled; `null` opens every depth.
+	let limit = $derived.by<number | null>(() => {
+		void data;
+		return null;
+	});
+	let opened = $derived.by(() => {
+		void data;
+		return new SvelteSet<string>();
+	});
+	let closed = $derived.by(() => {
 		void data;
 		return new SvelteSet<string>();
 	});
@@ -36,9 +45,43 @@
 		return typeof v;
 	}
 
-	function toggle(path: string) {
-		if (collapsed.has(path)) collapsed.delete(path);
-		else collapsed.add(path);
+	function isOpen(path: string, depth: number) {
+		if (closed.has(path)) return false;
+		if (opened.has(path)) return true;
+		return limit === null || depth < limit;
+	}
+
+	function setOpen(path: string, open: boolean) {
+		(open ? closed : opened).delete(path);
+		(open ? opened : closed).add(path);
+	}
+
+	function setSubtree(value: unknown, segments: Segment[], open: boolean) {
+		if (!isContainer(value)) return;
+		setOpen(jqPath(segments), open);
+		for (const [k, v] of entriesOf(value)) setSubtree(v, [...segments, k], open);
+	}
+
+	/** Alt- or Shift-click applies to the whole subtree. */
+	function toggle(e: MouseEvent, value: unknown, segments: Segment[], open: boolean) {
+		if (e.altKey || e.shiftKey) setSubtree(value, segments, !open);
+		else setOpen(jqPath(segments), !open);
+	}
+
+	/** Opens nodes shallower than `depth` (the root is depth 0); `null` opens everything. */
+	export function expandTo(depth: number | null) {
+		opened.clear();
+		closed.clear();
+		limit = depth;
+	}
+
+	export function expandAll() {
+		expandTo(null);
+	}
+
+	/** Leaves only the top-level keys visible. */
+	export function collapseAll() {
+		expandTo(1);
 	}
 
 	function pick(kind: AnnotationKind, segments: Segment[], value: unknown, e: MouseEvent) {
@@ -50,13 +93,14 @@
 {#snippet node(key: Segment | null, value: unknown, segments: Segment[], depth: number, comma: boolean)}
 	{@const path = jqPath(segments)}
 	{@const entries = isContainer(value) ? entriesOf(value) : []}
-	{@const open = isContainer(value) && entries.length > 0 && !collapsed.has(path)}
+	{@const open = isContainer(value) && entries.length > 0 && isOpen(path, depth)}
 	{@const [openBr, closeBr] = Array.isArray(value) ? ['[', ']'] : ['{', '}']}
 	<div class="row" style:--depth={depth} data-path={path}>
 		{#if isContainer(value) && entries.length}
 			<button
 				class={['toggle', open && 'open']}
-				onclick={() => toggle(path)}
+				onclick={(e) => toggle(e, value, segments, open)}
+				title="Alt-click to {open ? 'collapse' : 'expand'} everything inside"
 				aria-label="{open ? 'Collapse' : 'Expand'} {path}"
 				aria-expanded={open}
 			>
@@ -68,7 +112,7 @@
 			{#if open}
 				<span class="punct">{openBr}</span>
 			{:else if entries.length}
-				<span class="punct">{openBr}</span><button class="summary" onclick={() => toggle(path)}
+				<span class="punct">{openBr}</span><button class="summary" onclick={(e) => toggle(e, value, segments, false)}
 					>{entries.length} {Array.isArray(value) ? 'items' : 'keys'}</button
 				><span class="punct">{closeBr}{comma ? ',' : ''}</span>
 			{:else}

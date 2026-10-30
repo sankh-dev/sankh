@@ -4,6 +4,7 @@ import type {
 	EnvFileVar,
 	EnvImportPlan,
 	EnvVars,
+	FileListing,
 	Info,
 	PostmanImported,
 	PostmanImportRequest,
@@ -71,6 +72,18 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 	return data as T;
 }
 
+/** Sends `file` as the raw request body. */
+async function upload<T>(path: string, file: Blob): Promise<T> {
+	const res = await fetch(`${apiBase}${path}`, {
+		method: 'PUT',
+		headers: { ...headers(false), 'Content-Type': 'application/octet-stream' },
+		body: file
+	});
+	const data = await res.json().catch(() => ({}));
+	if (!res.ok) throw new ApiError(res.status, data.error ?? res.statusText, data.details);
+	return data as T;
+}
+
 const enc = (path: string) => path.split('/').map(encodeURIComponent).join('/');
 const c = (cid: string) => `/c/${encodeURIComponent(cid)}`;
 
@@ -95,6 +108,10 @@ export const api = {
 	saveRequest: (cid: string, path: string, content: string) =>
 		call<RequestDoc>('PUT', `${c(cid)}/request/${enc(path)}`, { content }),
 	deleteRequest: (cid: string, path: string) => call<unknown>('DELETE', `${c(cid)}/request/${enc(path)}`),
+	listFiles: (cid: string, dir = '') =>
+		call<FileListing>('GET', `${c(cid)}/files${dir ? `?dir=${encodeURIComponent(dir)}` : ''}`),
+	uploadFile: (cid: string, path: string, file: Blob) =>
+		upload<{ path: string; size: number }>(`${c(cid)}/files/${enc(path)}`, file),
 	copyRequest: (cid: string, path: string, to: string, toPath: string) =>
 		call<{ collection: string; path: string }>('POST', `${c(cid)}/copy`, { path, to, to_path: toPath }),
 	parse: (cid: string, content: string, path: string) =>

@@ -230,8 +230,9 @@
 		}
 	}
 
+	/** Collapses every collection and every folder in it, at any depth. */
 	function collapseFolders() {
-		for (const c of collections) if (!c.missing) collapseAll(c.id, trees[c.id] ?? null);
+		for (const c of collections) collapseAll(c.id, c.missing ? null : (trees[c.id] ?? null), true);
 	}
 
 	function expandFolders() {
@@ -548,8 +549,8 @@
 				</button>
 				<button
 					class="icon-btn"
-					title={someCollapsed ? 'Expand all' : 'Collapse all folders'}
-					aria-label={someCollapsed ? 'Expand all' : 'Collapse all folders'}
+					title={someCollapsed ? 'Expand all collections and folders' : 'Collapse all collections and folders'}
+					aria-label={someCollapsed ? 'Expand all collections and folders' : 'Collapse all collections and folders'}
 					onclick={someCollapsed ? expandFolders : collapseFolders}
 				>
 					<Icon name={someCollapsed ? 'expand' : 'collapse'} size={13} />

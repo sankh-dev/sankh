@@ -1,3 +1,9 @@
+export function formatSize(n: number) {
+	if (n < 1024) return `${n} B`;
+	if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+	return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 /**
  * Pretty-prints a JSON body. Bare variable references outside strings
  * (`{"id": $ID}`) are not JSON, so they are swapped for placeholder strings

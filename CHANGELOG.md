@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Body types in the request editor.** The Body tab switches between None, Raw, Form data, URL-encoded and Binary file. Form data and URL-encoded fields are edited as tables and saved as `-F`, `--form-string` and `--data-urlencode`; a binary body is saved as `--data-binary @file`. Values starting with `@` or `<` are saved with `--form-string` so they are sent as text. Fields the table cannot edit are kept as written.
+- **Pick or upload files.** File fields and binary bodies have a **Choose** button: browse the collection, or drop a file from your computer to copy it into the collection (`files/` by default). Uploads never overwrite an existing file.
+- **Expand and collapse JSON.** Responses have Expand all, Collapse all and depth 1–3 buttons; Alt-click a node to open or close everything inside it. Raw request bodies are edited as JSON with folding, and Fold all / Unfold all buttons.
+- `GET /api/c/{cid}/files` and `PUT /api/c/{cid}/files/{path}` (up to 50 MB) for listing and uploading files inside a collection.
+
+### Changed
+
+- **Collapse all in the sidebar** collapses every collection as well as its folders.
+- The Settings tab's curl flags no longer list form and URL-encoded fields; they are edited in the Body tab.
+
 ## [0.11.0] - 2026-10-29
 
 ### Changed

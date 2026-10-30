@@ -27,6 +27,8 @@ pub use registry::{Registry, Slot};
 
 /// Postman exports with many saved responses easily exceed axum's 2 MB default.
 const IMPORT_BODY_LIMIT: usize = 32 * 1024 * 1024;
+/// Largest file the request editor can upload into a collection.
+const UPLOAD_BODY_LIMIT: usize = 50 * 1024 * 1024;
 pub use security::is_loopback;
 
 /// Which collections to serve.
@@ -152,6 +154,11 @@ pub fn app(state: Arc<AppState>) -> Router {
             get(api::get_request)
                 .put(api::put_request)
                 .delete(api::delete_request),
+        )
+        .route("/files", get(api::list_files))
+        .route(
+            "/files/{*path}",
+            put(api::upload_file).layer(DefaultBodyLimit::max(UPLOAD_BODY_LIMIT)),
         )
         .route("/copy", post(api::copy_request))
         .route("/parse", post(api::parse))

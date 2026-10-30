@@ -38,6 +38,15 @@ export interface DirListing {
 	dirs: { name: string; path: string; collection: boolean }[];
 }
 
+/** One folder inside a collection; paths are relative to the collection root. */
+export interface FileListing {
+	dir: string;
+	/** `""` is the root; null when `dir` is the root. */
+	parent: string | null;
+	dirs: { name: string; path: string }[];
+	files: { name: string; path: string; size: number }[];
+}
+
 export interface ImportReport {
 	collection: string;
 	requests: number;

@@ -198,6 +198,7 @@
 			<FormView
 				bind:this={formView}
 				bind:form
+				{cid}
 				onedit={() => (dirty = true)}
 				{modeSwitch}
 				{actions}

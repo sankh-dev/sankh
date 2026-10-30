@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import ResponseBody from './ResponseBody.svelte';
+	import { formatSize } from './format';
 	import type { AnnotationKind } from './jsonpath';
 	import type { ErrorKind, RequestResult } from './types';
 
@@ -21,12 +22,6 @@
 		parse: 'Cannot read request',
 		config: 'Configuration error'
 	};
-
-	function formatSize(n: number) {
-		if (n < 1024) return `${n} B`;
-		if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-		return `${(n / 1024 / 1024).toFixed(1)} MB`;
-	}
 
 	function statusClass(status: number) {
 		if (status < 300) return 'ok';

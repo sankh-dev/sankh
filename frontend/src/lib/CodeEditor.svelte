@@ -1,12 +1,28 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { EditorView, basicSetup } from 'codemirror';
-	import { Decoration, ViewPlugin, hoverTooltip, keymap, type DecorationSet, type ViewUpdate } from '@codemirror/view';
+	import {
+		Decoration,
+		ViewPlugin,
+		hoverTooltip,
+		keymap,
+		placeholder as placeholderText,
+		type DecorationSet,
+		type ViewUpdate
+	} from '@codemirror/view';
 	import { StateEffect } from '@codemirror/state';
 	import { indentWithTab } from '@codemirror/commands';
 	import { autocompletion } from '@codemirror/autocomplete';
-	import { StreamLanguage } from '@codemirror/language';
+	import {
+		HighlightStyle,
+		StreamLanguage,
+		foldAll as foldAllCmd,
+		syntaxHighlighting,
+		unfoldAll as unfoldAllCmd
+	} from '@codemirror/language';
 	import { shell } from '@codemirror/legacy-modes/mode/shell';
+	import { json } from '@codemirror/lang-json';
+	import { tags } from '@lezer/highlight';
 	import { sankhCompletions } from './completions';
 	import { needsValue, refSpans, varTipDom, type VarInfo, type VarOption, type VarStatus } from './vars';
 
@@ -21,10 +37,31 @@
 		env?: string;
 		onsetvar?: (name: string, anchor: DOMRect) => void;
 		onchange?: (value: string) => void;
+		/** Fixed when the editor is created. */
+		language?: 'shell' | 'json';
+		placeholder?: string;
 	}
 
-	let { value = $bindable(), vars = [], varStatus, varInfo, env = '', onsetvar, onchange }: Props = $props();
+	let {
+		value = $bindable(),
+		vars = [],
+		varStatus,
+		varInfo,
+		env = '',
+		onsetvar,
+		onchange,
+		language = 'shell',
+		placeholder = ''
+	}: Props = $props();
 	let view: EditorView | undefined;
+
+	export function foldAll() {
+		if (view) foldAllCmd(view);
+	}
+
+	export function unfoldAll() {
+		if (view) unfoldAllCmd(view);
+	}
 
 	const recheck = StateEffect.define<null>();
 
@@ -52,6 +89,17 @@
 			}
 		},
 		{ dark: true }
+	);
+
+	/** Same colours as the response JSON tree; the default style is for light themes. */
+	const jsonColors = syntaxHighlighting(
+		HighlightStyle.define([
+			{ tag: tags.propertyName, color: 'var(--info)' },
+			{ tag: tags.string, color: 'var(--ok)' },
+			{ tag: tags.number, color: 'var(--warn)' },
+			{ tag: [tags.bool, tags.null], color: 'var(--accent)' },
+			{ tag: [tags.brace, tags.squareBracket, tags.separator], color: 'var(--muted)' }
+		])
 	);
 
 	function flagged(doc: string) {
@@ -112,7 +160,8 @@
 			extensions: [
 				basicSetup,
 				keymap.of([indentWithTab]),
-				StreamLanguage.define(shell),
+				untrack(() => (language === 'json' ? [json(), jsonColors] : StreamLanguage.define(shell))),
+				placeholderText(untrack(() => placeholder)),
 				autocompletion({ override: [sankhCompletions(() => vars)] }),
 				theme,
 				varMarks,

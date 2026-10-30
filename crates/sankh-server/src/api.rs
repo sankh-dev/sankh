@@ -323,6 +323,107 @@ pub async fn delete_request(
 }
 
 #[derive(Deserialize)]
+pub struct FilesQuery {
+    #[serde(default)]
+    dir: Option<String>,
+}
+
+/// Folders and files of one folder inside the collection, for picking `@file`
+/// paths. Dot entries are skipped; paths are relative to the collection root.
+pub async fn list_files(
+    State(state): State<Arc<AppState>>,
+    Path(cid): Path<String>,
+    Query(q): Query<FilesQuery>,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    let rel = q.dir.unwrap_or_default();
+    let rel = rel.trim_matches('/');
+    let dir = c.resolve(rel)?;
+    if !dir.is_dir() {
+        return Err(not_found(format!("folder `{rel}` not found")));
+    }
+    let mut dirs = Vec::new();
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(&dir)?.flatten().take(MAX_DIRS) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = c.rel(&entry.path());
+        let Ok(meta) = std::fs::metadata(entry.path()) else {
+            continue;
+        };
+        if meta.is_dir() {
+            dirs.push(json!({ "name": name, "path": path }));
+        } else {
+            files.push(json!({ "name": name, "path": path, "size": meta.len() }));
+        }
+    }
+    let by_name = |v: &Value| v["name"].as_str().unwrap_or("").to_lowercase();
+    dirs.sort_by_key(by_name);
+    files.sort_by_key(by_name);
+    let parent = (!rel.is_empty()).then(|| rel.rsplit_once('/').map_or("", |(p, _)| p));
+    Ok(Json(json!({
+        "dir": rel,
+        "parent": parent,
+        "dirs": dirs,
+        "files": files,
+    })))
+}
+
+/// Request files, environments and settings are edited elsewhere, never uploaded over.
+fn upload_allowed(path: &str) -> Result<(), ApiError> {
+    let segments: Vec<&str> = path.split('/').collect();
+    let name = segments.last().copied().unwrap_or("");
+    if name.is_empty() {
+        return Err(bad("a file name is required"));
+    }
+    if segments.iter().any(|s| s.starts_with('.')) {
+        return Err(bad("hidden files and folders cannot be uploaded"));
+    }
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".sh") || lower.ends_with(".env") || lower == "sankh.toml" {
+        return Err(bad(format!(
+            "`{name}` cannot be uploaded: request, environment and settings files are edited in the app"
+        )));
+    }
+    if segments.len() > 1 && segments[0] == "environments" {
+        return Err(bad("files cannot be uploaded into environments/"));
+    }
+    Ok(())
+}
+
+/// Saves an uploaded file inside the collection so requests can send it with
+/// `@path`. Never overwrites: an existing file is a 409.
+pub async fn upload_file(
+    State(state): State<Arc<AppState>>,
+    Path((cid, path)): Path<(String, String)>,
+    body: axum::body::Bytes,
+) -> ApiResult {
+    let c = collection(&state, &cid)?;
+    upload_allowed(&path)?;
+    let abs = c.resolve(&path)?;
+    prepare_parent(&c, &path, &abs)?;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&abs);
+    let mut file = match file {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                format!("`{path}` already exists"),
+                None,
+            ));
+        }
+        Err(e) => return Err(e.into()),
+    };
+    std::io::Write::write_all(&mut file, &body)?;
+    Ok(Json(json!({ "path": c.rel(&abs), "size": body.len() })))
+}
+
+#[derive(Deserialize)]
 pub struct CopyBody {
     path: String,
     to: String,
